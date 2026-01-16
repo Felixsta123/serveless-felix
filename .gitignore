@@ -3,5 +3,6 @@ node_modules
 .build
 .gcloud
 keyfile.json
+dist
 *.log
 .DS_Store

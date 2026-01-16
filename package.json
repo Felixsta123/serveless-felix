@@ -6,20 +6,20 @@
   "scripts": {
     "build": "tsc",
     "predeploy": "npm run build && cp package.json package-lock.json dist/",
-    "deploy:dev": "npm run predeploy && cd dist && gcloud functions deploy hello --gen2 --runtime=nodejs20 --region=us-central1 --source=. --entry-point=hello --trigger-http --allow-unauthenticated --project=serverless-felix-dev --set-build-env-vars=GOOGLE_NODE_RUN_SCRIPTS=",
-    "deploy:prd": "npm run predeploy && cd dist && gcloud functions deploy hello --gen2 --runtime=nodejs20 --region=us-central1 --source=. --entry-point=hello --trigger-http --allow-unauthenticated --project=serverless-felix-prd --set-build-env-vars=GOOGLE_NODE_RUN_SCRIPTS="
+    "dev:hello": "NODE_OPTIONS=\"--require ts-node/register\" functions-framework --target=hello --source=src/index.ts",
+    "dev:discordProxy": "NODE_OPTIONS=\"--require ts-node/register\" functions-framework --target=discordProxy --source=src/index.ts",
+    "dev:workerDraw": "NODE_OPTIONS=\"--require ts-node/register\" functions-framework --target=workerDraw --signature-type=cloudevent --source=src/index.ts",
+    "deploy:dev:discordProxy": "npm run predeploy && cd dist && gcloud functions deploy discordProxy --gen2 --runtime=nodejs24 --region=us-central1 --source=. --entry-point=discordProxy --trigger-http --allow-unauthenticated --project=serverless-felix-dev",
+    "deploy:dev:workerDraw": "npm run predeploy && cd dist && gcloud functions deploy workerDraw --gen2 --runtime=nodejs24 --region=us-central1 --source=. --entry-point=workerDraw --trigger-topic=jobs --project=serverless-felix-dev"
   },
-  "author": "Felix Stavonhagen",
-  "license": "ISC",
   "dependencies": {
-    "@google-cloud/functions-framework": "^3.3.0"
+    "@google-cloud/functions-framework": "^5.0.0",
+    "cloudevents": "^10.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "serverless": "^3.38.0",
-    "serverless-google-cloudfunctions": "^4.6.0",
-    "serverless-plugin-typescript": "^2.1.0",
+    "@types/node": "^25.0.9",
+    "serverless": "^4.31.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.9.3"
   }
 }
