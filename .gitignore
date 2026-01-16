@@ -1,0 +1,7 @@
+node_modules
+.serverless
+.build
+.gcloud
+keyfile.json
+*.log
+.DS_Store

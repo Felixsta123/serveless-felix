@@ -1,0 +1,21 @@
+{
+  "name": "serverless-felix",
+  "version": "1.0.0",
+  "description": "Serverless Cloud Project",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy": "sls deploy"
+  },
+  "author": "Felix Stavonhagen",
+  "license": "ISC",
+  "devDependencies": {
+    "@google-cloud/functions-framework": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "serverless": "^3.38.0",
+    "serverless-google-cloudfunctions": "^4.6.0",
+    "serverless-plugin-typescript": "^2.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
