@@ -15,3 +15,11 @@
 - **Local compilation:** TypeScript is compiled locally using `npm run build` (`tsc`).
 - **Artifact creation:** `npm run predeploy` creates a `dist` folder with compiled JS + `package.json` + `package-lock.json`.
 - **Environment config:** `deploy:dev` command sets `GOOGLE_NODE_RUN_SCRIPTS=` to prevent Cloud Build from trying to re-build (which fails without `tsconfig.json`).
+
+## To activate jobs (already done in dev, todo in prod)
+gcloud services enable pubsub.googleapis.com
+gcloud pubsub topics create jobs --project=serverless-felix-dev
+
+## Also need to enable these APIs
+gcloud services enable cloudfunctions.googleapis.com
+gcloud services enable eventarc.googleapis.com
