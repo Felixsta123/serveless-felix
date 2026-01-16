@@ -37,8 +37,8 @@ jobs:
 
       - name: Deploy to Dev
         if: github.ref == 'refs/heads/dev'
-        run: npx serverless deploy --stage dev
+        run: npm run deploy:dev
 
       - name: Deploy to Prod
         if: github.ref == 'refs/heads/main'
-        run: npx serverless deploy --stage prd
+        run: npm run deploy:prd

@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+node_modules
+src
+tsconfig.json
+serverless.yml
+trace.md
+agents.md
+scripts
+*.log
+.DS_Store

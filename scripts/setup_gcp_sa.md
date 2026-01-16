@@ -33,10 +33,20 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
     --role="roles/storage.admin"
 
-# Artifact Registry Writer (if using Gen 2 functions / containers)
+# Artifact Registry Writer (REQUIRED for Gen 2 / containers)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
     --role="roles/artifactregistry.writer"
+
+# Logging Log Writer (for build logs)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/logging.logWriter"
+
+# Cloud Run Admin (REQUIRED for Gen 2 functions as they run on Cloud Run)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/run.admin"
 ```
 
 ### 3. Generate Key
