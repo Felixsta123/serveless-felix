@@ -39,6 +39,10 @@ jobs:
         if: github.ref == 'refs/heads/dev'
         run: npm run deploy:dev
 
+      - name: Deploy API Gateway (Dev)
+        if: github.ref == 'refs/heads/dev'
+        run: npm run deploy:dev:gateway
+
       - name: Deploy to Prod
         if: github.ref == 'refs/heads/main'
         run: npm run deploy:prd

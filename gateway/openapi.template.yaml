@@ -1,0 +1,58 @@
+swagger: '2.0'
+info:
+  title: serverless-felix
+  description: API Gateway for serverless-felix
+  version: 1.0.0
+schemes:
+  - https
+produces:
+  - application/json
+paths:
+  /discord:
+    post:
+      summary: Discord interactions proxy
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/discordProxy
+        path_translation: CONSTANT_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/discordProxy
+      responses:
+        '200':
+          description: OK
+  /web:
+    get:
+      summary: Web proxy
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        path_translation: CONSTANT_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Web proxy
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        path_translation: CONSTANT_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+      responses:
+        '200':
+          description: OK
+  /oauth:
+    get:
+      summary: OAuth proxy
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+        path_translation: CONSTANT_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: OAuth proxy
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+        path_translation: CONSTANT_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+      responses:
+        '200':
+          description: OK
