@@ -5,17 +5,53 @@ import { DiscordJobPayload } from '../../shared/queue.js';
 
 const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 
-const parseJob = (event: CloudEvent<PubSubEnvelope>): DiscordJobPayload | null => {
-  const data = event.data?.message?.data;
+const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
+  const data = event.data;
   if (!data) {
     return null;
   }
-  try {
-    const json = Buffer.from(data, 'base64').toString('utf8');
-    return JSON.parse(json) as DiscordJobPayload;
-  } catch (error) {
-    console.error('workerDiscord failed to parse job payload', error);
+  if (typeof data === 'string') {
+    return data;
+  }
+  if (Buffer.isBuffer(data)) {
+    return data.toString('utf8');
+  }
+  const messageData = data.message?.data;
+  if (typeof messageData === 'string') {
+    return messageData;
+  }
+  if (Buffer.isBuffer(messageData)) {
+    return messageData.toString('utf8');
+  }
+  const legacyData = (data as { data?: unknown }).data;
+  if (typeof legacyData === 'string') {
+    return legacyData;
+  }
+  if (Buffer.isBuffer(legacyData)) {
+    return legacyData.toString('utf8');
+  }
+  return null;
+};
+
+const parseJob = (event: CloudEvent<PubSubEnvelope>): DiscordJobPayload | null => {
+  const raw = extractMessageData(event);
+  if (!raw) {
+    console.log('workerDiscord missing message data', {
+      dataType: typeof event.data,
+      hasMessage: Boolean(event.data?.message),
+    });
     return null;
+  }
+  try {
+    const decoded = Buffer.from(raw, 'base64').toString('utf8');
+    return JSON.parse(decoded) as DiscordJobPayload;
+  } catch (error) {
+    try {
+      return JSON.parse(raw) as DiscordJobPayload;
+    } catch (fallbackError) {
+      console.error('workerDiscord failed to parse job payload', error, fallbackError);
+      return null;
+    }
   }
 };
 
@@ -65,7 +101,7 @@ const sendFollowup = async (
 export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
   const job = parseJob(event);
   if (!job || job.kind !== 'discord.command') {
-    console.log('workerDiscord ignored message', event.id);
+    console.log('workerDiscord ignored message', event.id ?? 'unknown');
     return;
   }
 
