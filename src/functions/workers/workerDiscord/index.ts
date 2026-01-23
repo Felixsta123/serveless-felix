@@ -16,7 +16,7 @@ const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null =>
   if (Buffer.isBuffer(data)) {
     return data.toString('utf8');
   }
-  const messageData = data.message?.data;
+  const messageData = (data as { message?: { data?: unknown } }).message?.data;
   if (typeof messageData === 'string') {
     return messageData;
   }
