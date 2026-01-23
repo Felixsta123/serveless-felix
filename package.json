@@ -21,6 +21,7 @@
     "deploy:dev:oauthProxy": "node scripts/deploy.mjs dev oauthProxy",
     "deploy:dev:workerDraw": "node scripts/deploy.mjs dev workerDraw",
     "deploy:dev:workerSnapshot": "node scripts/deploy.mjs dev workerSnapshot",
+    "discord:commands": "node scripts/register-commands.mjs",
     "deploy:prd:hello": "node scripts/deploy.mjs prd hello",
     "deploy:prd:discordProxy": "node scripts/deploy.mjs prd discordProxy",
     "deploy:prd:webProxy": "node scripts/deploy.mjs prd webProxy",
