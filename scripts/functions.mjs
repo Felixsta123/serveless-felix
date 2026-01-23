@@ -23,4 +23,8 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
   },
+  workerDiscord: {
+    trigger: 'topic',
+    topic: 'jobs',
+  },
 };

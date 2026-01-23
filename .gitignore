@@ -6,3 +6,4 @@ keyfile.json
 dist
 *.log
 .DS_Store
+.env
