@@ -13,9 +13,9 @@ paths:
       summary: Discord interactions proxy
       operationId: discordPost
       x-google-backend:
-        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/discordProxy
+        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/discordProxy
         path_translation: CONSTANT_ADDRESS
-        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/discordProxy
+        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/discordProxy
       responses:
         '200':
           description: OK
@@ -24,9 +24,9 @@ paths:
       summary: Web proxy
       operationId: webGet
       x-google-backend:
-        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
         path_translation: CONSTANT_ADDRESS
-        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
       responses:
         '200':
           description: OK
@@ -34,9 +34,9 @@ paths:
       summary: Web proxy
       operationId: webPost
       x-google-backend:
-        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
         path_translation: CONSTANT_ADDRESS
-        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
       responses:
         '200':
           description: OK
@@ -45,9 +45,9 @@ paths:
       summary: OAuth proxy
       operationId: oauthGet
       x-google-backend:
-        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/oauthProxy
         path_translation: CONSTANT_ADDRESS
-        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/oauthProxy
       responses:
         '200':
           description: OK
@@ -55,9 +55,9 @@ paths:
       summary: OAuth proxy
       operationId: oauthPost
       x-google-backend:
-        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/oauthProxy
         path_translation: CONSTANT_ADDRESS
-        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/oauthProxy
+        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/oauthProxy
       responses:
         '200':
           description: OK

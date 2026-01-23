@@ -58,7 +58,7 @@ if (
 for (const fn of ['discordProxy', 'webProxy', 'oauthProxy']) {
   run([
     'functions',
-    'add-iam-policy-binding',
+    'add-invoker-policy-binding',
     fn,
     '--gen2',
     '--region',
@@ -67,8 +67,6 @@ for (const fn of ['discordProxy', 'webProxy', 'oauthProxy']) {
     projectId,
     '--member',
     `serviceAccount:${serviceAccount}`,
-    '--role',
-    'roles/cloudfunctions.invoker',
   ]);
 }
 
