@@ -40,17 +40,67 @@ const basePath = GUILD_ID
   ? `/applications/${APP_ID}/guilds/${GUILD_ID}/commands`
   : `/applications/${APP_ID}/commands`;
 
-const command = {
-  name: 'hello',
-  description: 'Test the API Gateway',
-  type: 1,
-};
+const commands = [
+  {
+    name: 'draw',
+    description: 'Draw a pixel on the canvas',
+    type: 1,
+    options: [
+      {
+        name: 'x',
+        description: 'X coordinate',
+        type: 4,
+        required: true,
+      },
+      {
+        name: 'y',
+        description: 'Y coordinate',
+        type: 4,
+        required: true,
+      },
+      {
+        name: 'color',
+        description: 'Hex color (e.g. #ff00aa)',
+        type: 3,
+        required: true,
+      },
+    ],
+  },
+  {
+    name: 'canvas',
+    description: 'Get the current canvas status',
+    type: 1,
+  },
+  {
+    name: 'session',
+    description: 'Manage the drawing session (admin)',
+    type: 1,
+    options: [
+      {
+        name: 'action',
+        description: 'Session action',
+        type: 3,
+        required: true,
+        choices: [
+          { name: 'start', value: 'start' },
+          { name: 'pause', value: 'pause' },
+          { name: 'reset', value: 'reset' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'snapshot',
+    description: 'Create a canvas snapshot (admin)',
+    type: 1,
+  },
+];
 
-const requestBody = JSON.stringify(command);
+const requestBody = JSON.stringify(commands);
 
 const req = https.request(
   {
-    method: 'POST',
+    method: 'PUT',
     hostname: 'discord.com',
     path: `/api/v10${basePath}`,
     headers: {

@@ -32,6 +32,7 @@
     "deploy:prd:workerSnapshot": "node scripts/deploy.mjs prd workerSnapshot"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^8.2.0",
     "@google-cloud/functions-framework": "^5.0.0",
     "@google-cloud/pubsub": "^5.2.2",
     "cloudevents": "^10.0.0"

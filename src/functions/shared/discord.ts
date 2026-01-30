@@ -17,6 +17,7 @@ export type DiscordInteraction = {
       id?: string;
       username?: string;
     };
+    roles?: string[];
   };
   user?: {
     id?: string;
@@ -90,4 +91,3 @@ export const parseDiscordInteraction = (req: HttpRequest): DiscordInteraction | 
 
 export const getInteractionUserId = (interaction: DiscordInteraction): string | undefined =>
   interaction.member?.user?.id ?? interaction.user?.id;
-

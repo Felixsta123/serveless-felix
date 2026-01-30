@@ -1,185 +1,143 @@
-## Serverless Plan
+# Serverless Plan (GCP)
 
-### 1) Product definition
+## 1) Goal
+Build a fully serverless, event-driven multiplayer pixel canvas where users draw via Discord and a web app. All public traffic goes through API Gateway -> proxy functions -> Pub/Sub -> workers.
 
-Pixel canvas. Web shows live state (Firestore reads). All writes server-side (API Gateway -> queue -> worker). Discord can draw + request snapshot.
+## 2) Hard constraints (subject)
+- Serverless only (Cloud Functions, Firestore, Cloud Storage, Pub/Sub, API Gateway).
+- No direct public function invocations; API Gateway is the only public entrypoint.
+- All workloads are asynchronous and event-driven; proxies only enqueue and immediately ack.
+- Functions follow SRP (single responsibility).
+- Auth required for web API (Discord OAuth2 recommended); Discord interactions signed.
+- Discord interactions must be ACKed within 3 seconds (deferred response); real work happens in workers.
+- No `--allow-unauthenticated` on functions; API Gateway service account is the only invoker.
 
----
+## 3) Current status (implemented vs missing)
+Implemented
+- API Gateway OpenAPI template with `/discord`, `/web`, `/oauth` routes.
+- Deploy scripts for functions and API Gateway.
+- Discord proxy verifies signature and enqueues job.
+- Worker that replies to a `hello` Discord command.
 
-## 2) Hard constraints
+Missing / stubbed
+- webProxy and oauthProxy logic.
+- workerDraw, workerSnapshot logic.
+- Firestore schema, GCS bucket usage, rate limiting, idempotency.
+- Web app + OAuth flow.
+- Admin/session commands and snapshots.
+- Monitoring, IAM least-privilege policies, Secret Manager usage.
 
-- GCP only: API Gateway, Cloud Functions, Pub/Sub, Firestore, GCS, Secret Manager
-- Firebase: Hosting + Auth
-- No Cloud Run
-- Web OAuth: Discord -> Firebase custom token
-- Strict 20/min per user
-- Append-only event log
-- Snapshot uses active area
+## 4) Architecture (target)
+Entry
+- API Gateway (public)
 
----
+Proxies (HTTP Cloud Functions Gen2)
+- `discordProxy` -> validate signature -> enqueue job
+- `webProxy` -> validate auth -> enqueue job
+- `oauthProxy` -> validate callback + state -> enqueue `oauth.exchange` -> immediate redirect/poll page
 
-## 3) Minimal architecture
+Event bus
+- Pub/Sub topic `jobs` (initially single topic with attributes like `kind=draw|snapshot|session|discord`)
 
-Clients
-
-- Web SPA (Firebase Hosting)
-- Discord bot (slash commands)
-
-Ingress (single)
-
-- API Gateway
-
-Compute
-
-- Cloud Functions (HTTP proxies)
-- Cloud Functions (Pub/Sub workers)
-
-Queue
-
-- Pub/Sub topic: `jobs`
+Workers (Pub/Sub Cloud Functions Gen2)
+- `workerDraw` -> rate limit + idempotency -> write pixel + event log + active area
+- `workerSnapshot` -> render canvas image -> upload to GCS -> notify Discord
+- `workerDiscord` -> handles Discord follow-ups and admin/session commands
+- `workerOAuth` -> exchange Discord code -> mint Firebase custom token -> store session token for SPA
 
 Storage
+- Firestore for canvas state, events, rate limit, idempotency, config
+- Cloud Storage bucket for snapshots and static exports
 
-- Firestore: `canvas state`, `events`, `activeArea`, `rate`, `config`, `idempotency`
-- GCS: `snapshots`, `event-archives`
+Security/ops
+- Secret Manager for Discord secrets, OAuth secrets
+- Least-privilege service accounts
+- Cloud Logging/Monitoring/Trace enabled
 
-Secrets/ops
-
-- Secret Manager
-- Logging/Monitoring
-
----
-
-## 4) Components
-
-### HTTP Cloud Functions (3)
-
-1. `discordProxy` `/discord/interactions`
-- verify signature
-- enforce guildId
-- publish job
-- immediate ack
-
-1. `webProxy` `/api/*`
-- verify Firebase ID token
-- publish job
-- return 202
-
-1. `oauthProxy` `/auth/discord/callback`
-- exchange code
-- fetch Discord user
-- mint Firebase custom token
-- redirect to SPA
-
-### Pub/Sub (1 topic)
-
-- `jobs` with attribute `type=draw|snapshot`
-
-### Worker Cloud Functions (2)
-
-1. `workerDraw` (Pub/Sub)
-- idempotency
-- strict 20/min
-- write pixel state
-- write event log
-- update active area
-- Discord follow-up if source=discord
-
-1. `workerSnapshot` (Pub/Sub)
-- read active area
-- render image
-- upload GCS
-- Discord follow-up with URL
-
----
-
-## 5) Firestore schema
-
+## 5) Data model (Firestore)
 Config
+- `config/discord`: `{ allowedGuildId, adminRoleId }`
 
-- `config/discord` `{allowedGuildId, adminRoleId}`
-
-Canvas state (web reads)
-
-- `chunks/{chunkId}/pixels/{pixelId}` `{x,y,color,updatedAt,authorId}`
+Canvas state (near-real-time reads)
+- `chunks/{chunkId}/pixels/{pixelId}`: `{ x, y, color, updatedAt, authorId }`
 
 Active area
-
-- `activeArea/current` `{minX,minY,maxX,maxY,updatedAt}`
+- `activeArea/current`: `{ minX, minY, maxX, maxY, updatedAt }`
 
 Event log (append-only)
-
-- `eventsByDay/{YYYYMMDD}/items/{eventId}` `{ts,source,userId,guildId,x,y,newColor,oldColor?}`
+- `eventsByDay/{YYYYMMDD}/items/{eventId}`: `{ ts, source, userId, guildId, x, y, newColor, oldColor? }`
 
 Rate limit (strict 20/min)
-
-- `rate/{userId}/minutes/{YYYYMMDDHHmm}` `{count}`
+- `rate/{userId}/minutes/{YYYYMMDDHHmm}`: `{ count }`
 
 Idempotency
+- `idempotency/{eventId}`: `{ createdAt }` with TTL
 
-- `idempotency/{eventId}` `{createdAt}` with TTL
+## 6) Events / job payloads
+- `draw.requested`: `{ x, y, color, userId, source, interaction? }`
+- `snapshot.requested`: `{ userId, source, interaction? }`
+- `session.command`: `{ action: start|pause|reset, userId, source, interaction? }`
 
----
+## 7) Discord commands (minimum)
+User
+- `/draw x y color`
+- `/canvas` (returns status or link)
 
-## 6) Security
+Admin
+- `/session start|pause|reset`
+- `/snapshot`
 
-Firestore rules
+## 8) Web app requirements
+- SPA (Firebase Hosting recommended)
+- Discord OAuth2 -> async token exchange via worker -> Firebase custom token session
+- Real-time canvas rendering via Firestore listeners
+- Pixel selection shows author + timestamp
+- Writes go through API Gateway -> webProxy
 
-- Allow read: `chunks/**`, `activeArea/**` for authenticated user    
-- Deny all client writes everywhere
+## 9) Security
+- API Gateway uses service account to invoke proxies.
+- Proxies only publish to Pub/Sub; no direct data writes.
+- Firestore rules: authenticated reads, no client writes.
+- Secrets stored in Secret Manager and injected at deploy time.
+- Remove or lock down any non-gateway HTTP functions (e.g. `hello`) in prod.
 
-IAM
+## 10) Observability
+- Structured logs on proxies/workers.
+- Metrics dashboards: errors, Pub/Sub backlog, worker latency.
+- Alerts for error rate and backlog growth.
 
-- Proxies: publish Pub/Sub, read secrets
-- Workers: subscribe Pub/Sub, RW Firestore, (snapshot worker) write GCS, read secrets
+## 11) Execution plan (ordered)
+1. Baseline infrastructure
+   - Enable APIs, create Pub/Sub topic `jobs`, Firestore, GCS buckets, Secret Manager entries.
+   - Create service accounts and IAM roles for proxies/workers.
+   - Deploy API Gateway and functions.
 
----
+2. Discord pipeline
+   - Expand slash commands to match requirements.
+   - Implement `workerDiscord` routing for follow-ups and admin commands.
+   - Implement `workerDraw` to write Firestore and reply to Discord when source=discord.
 
-## 7) Execution plan
+3. Web pipeline
+   - Implement `webProxy` auth validation and enqueue draw/snapshot requests.
+   - Implement `oauthProxy` as proxy-only; enqueue `oauth.exchange`.
+   - Implement `workerOAuth` to exchange Discord code and mint Firebase custom token.
+   - Build SPA with authenticated reads and pixel selection.
 
-### Step 1: Infrastructure baseline
+4. Snapshot flow
+   - Implement `workerSnapshot` render -> upload to GCS -> Discord follow-up.
 
-- Firestore, GCS buckets, Pub/Sub `jobs`
-- Secret Manager entries
-- Service accounts + least privilege
-- API Gateway routes to proxies
+5. Hardening
+   - Add idempotency, rate limiting, DLQ, retries.
+   - Finalize Firestore rules and secret handling.
+   - Monitoring dashboards and alerts.
 
-### Step 2: Auth
-
-- `oauthProxy` mint Firebase custom token
-- SPA login flow + Firebase Auth session
-
-### Step 3: Web live view
-
-- SPA subscribes to Firestore `chunks/**` for viewport
-- Subscribe to `activeArea/current`
-
-### Step 4: Write pipeline
-
-- `webProxy` -> Pub/Sub
-- `workerDraw`: idempotency + rate + write pixel + event + activeArea
-- SPA sees result via Firestore
-
-### Step 5: Discord draw
-
-- `discordProxy` signature + guild restriction
-- Publish draw job with interaction metadata
-- `workerDraw` sends follow-up message
-
-### Step 6: Snapshot
-
-- `workerSnapshot` render active area -> GCS -> Discord follow-up
-
-### Step 7: Retention (only after features work)
-
-- Firestore TTL on idempotency + events
-- GCS lifecycle on snapshots + archives
-- Optional daily archive export job
-
----
-
-## 8) Retention defaults
-
-- Idempotency TTL: 7 days
-- Events TTL: 30 days (start smaller to avoid cost surprise)
-- Snapshots lifecycle: delete after 90 days
+## 12) Acceptance checklist
+- All public entrypoints are API Gateway routes only.
+- All writes are asynchronous via Pub/Sub.
+- Discord commands work (draw, snapshot, session).
+- Web app supports authenticated draw + real-time view.
+- Rate limiting and idempotency enforced.
+- Snapshots stored in GCS and posted back to Discord.
+- IAM least-privilege and Secret Manager in use.
+- Logs and metrics available in Cloud Monitoring.
+- No direct function invocation possible from the public internet.

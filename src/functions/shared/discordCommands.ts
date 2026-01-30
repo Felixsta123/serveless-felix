@@ -6,7 +6,10 @@ export type DiscordCommandRoute = {
 };
 
 const COMMAND_ROUTES = new Map<string, DiscordCommandRoute>([
-  ['hello', { name: 'hello', jobType: 'discord.hello' }],
+  ['draw', { name: 'draw', jobType: 'draw.requested' }],
+  ['canvas', { name: 'canvas', jobType: 'canvas.requested' }],
+  ['session', { name: 'session', jobType: 'session.command' }],
+  ['snapshot', { name: 'snapshot', jobType: 'snapshot.requested' }],
 ]);
 
 export const resolveDiscordCommand = (
@@ -20,4 +23,3 @@ export const resolveDiscordCommand = (
 };
 
 export const listDiscordCommands = (): string[] => Array.from(COMMAND_ROUTES.keys());
-
