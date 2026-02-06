@@ -19,27 +19,52 @@ paths:
       responses:
         '200':
           description: OK
-  /web:
+  /web/{path}:
     get:
-      summary: Web proxy
-      operationId: webGet
+      summary: Web proxy with path
+      operationId: webGetPath
+      parameters:
+        - name: path
+          in: path
+          required: true
+          type: string
       x-google-backend:
         address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
-        path_translation: CONSTANT_ADDRESS
+        path_translation: APPEND_PATH_TO_ADDRESS
         jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
       responses:
         '200':
           description: OK
     post:
-      summary: Web proxy
-      operationId: webPost
+      summary: Web proxy with path
+      operationId: webPostPath
+      parameters:
+        - name: path
+          in: path
+          required: true
+          type: string
       x-google-backend:
         address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
-        path_translation: CONSTANT_ADDRESS
+        path_translation: APPEND_PATH_TO_ADDRESS
         jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
       responses:
         '200':
           description: OK
+    options:
+      summary: Web proxy CORS preflight
+      operationId: webOptionsPath
+      parameters:
+        - name: path
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
+        path_translation: APPEND_PATH_TO_ADDRESS
+        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/webProxy
+      responses:
+        '204':
+          description: No Content
   /oauth:
     get:
       summary: OAuth proxy

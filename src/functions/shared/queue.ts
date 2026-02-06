@@ -54,12 +54,21 @@ export type DiscordFollowupJobPayload = {
   content: string;
 };
 
+export type OAuthExchangeJobPayload = {
+  kind: 'oauth.exchange';
+  receivedAt: string;
+  code: string;
+  state: string;
+  redirectUri: string;
+};
+
 export type JobPayload =
   | DrawJobPayload
   | CanvasJobPayload
   | SessionJobPayload
   | SnapshotJobPayload
-  | DiscordFollowupJobPayload;
+  | DiscordFollowupJobPayload
+  | OAuthExchangeJobPayload;
 
 const pubsub = new PubSub();
 

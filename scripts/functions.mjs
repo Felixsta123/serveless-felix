@@ -23,4 +23,8 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
   },
+  workerOAuth: {
+    trigger: 'topic',
+    topic: 'jobs',
+  },
 };

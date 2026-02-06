@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pixel Canvas</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>🎨 Pixel Canvas</h1>
+        <div id="auth-section">
+          <button id="login-btn" class="btn btn-primary">Login with Discord</button>
+          <div id="user-info" style="display: none;">
+            <img id="user-avatar" alt="avatar" />
+            <span id="user-name"></span>
+            <button id="logout-btn" class="btn btn-secondary">Logout</button>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <div id="canvas-wrapper">
+          <canvas id="canvas"></canvas>
+        </div>
+
+        <aside id="sidebar">
+          <section id="pixel-info">
+            <h3>Pixel Info</h3>
+            <p id="coords">Click on canvas to select</p>
+            <p id="author"></p>
+            <p id="updated"></p>
+          </section>
+
+          <section id="draw-section">
+            <h3>Draw</h3>
+            <input type="color" id="color-picker" value="#ff0000" />
+            <button id="draw-btn" class="btn btn-primary" disabled>Draw Pixel</button>
+          </section>
+
+          <section id="status-section">
+            <p id="status">Connecting...</p>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

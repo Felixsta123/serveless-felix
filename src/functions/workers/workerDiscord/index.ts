@@ -6,6 +6,7 @@ import { postDiscordFollowup } from '../../shared/discordApi.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
+const WEB_APP_URL = process.env.WEB_APP_URL ?? 'https://your-app.web.app';
 
 const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
   const data = event.data;
@@ -88,7 +89,7 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         interaction.applicationId,
         interaction.token,
-        'Canvas is live. Web link coming soon.',
+        `🎨 **Pixel Canvas is live!**\n\n🔗 ${WEB_APP_URL}\n\nLog in with Discord to draw pixels!`,
       );
     } catch (error) {
       console.error('workerDiscord failed to send canvas followup', error);

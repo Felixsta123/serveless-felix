@@ -7,3 +7,8 @@ dist
 *.log
 .DS_Store
 .env
+secrets.yml
+
+# Firebase
+.firebase/
+firebase-debug.log

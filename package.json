@@ -13,6 +13,8 @@
     "dev:oauthProxy": "node scripts/dev.mjs oauthProxy",
     "dev:workerDraw": "node scripts/dev.mjs workerDraw",
     "dev:workerSnapshot": "node scripts/dev.mjs workerSnapshot",
+    "dev:workerDiscord": "node scripts/dev.mjs workerDiscord",
+    "dev:workerOAuth": "node scripts/dev.mjs workerOAuth",
     "deploy:dev": "node scripts/deploy.mjs dev",
     "deploy:dev:gateway": "node scripts/deploy-gateway.mjs dev",
     "deploy:prd": "node scripts/deploy.mjs prd",
@@ -23,13 +25,17 @@
     "deploy:dev:oauthProxy": "node scripts/deploy.mjs dev oauthProxy",
     "deploy:dev:workerDraw": "node scripts/deploy.mjs dev workerDraw",
     "deploy:dev:workerSnapshot": "node scripts/deploy.mjs dev workerSnapshot",
+    "deploy:dev:workerDiscord": "node scripts/deploy.mjs dev workerDiscord",
+    "deploy:dev:workerOAuth": "node scripts/deploy.mjs dev workerOAuth",
     "discord:commands": "node scripts/register-commands.mjs",
     "deploy:prd:hello": "node scripts/deploy.mjs prd hello",
     "deploy:prd:discordProxy": "node scripts/deploy.mjs prd discordProxy",
     "deploy:prd:webProxy": "node scripts/deploy.mjs prd webProxy",
     "deploy:prd:oauthProxy": "node scripts/deploy.mjs prd oauthProxy",
     "deploy:prd:workerDraw": "node scripts/deploy.mjs prd workerDraw",
-    "deploy:prd:workerSnapshot": "node scripts/deploy.mjs prd workerSnapshot"
+    "deploy:prd:workerSnapshot": "node scripts/deploy.mjs prd workerSnapshot",
+    "deploy:prd:workerDiscord": "node scripts/deploy.mjs prd workerDiscord",
+    "deploy:prd:workerOAuth": "node scripts/deploy.mjs prd workerOAuth"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.2.0",
