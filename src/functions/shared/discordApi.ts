@@ -2,6 +2,21 @@ import https from 'node:https';
 
 const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 
+type DiscordEmbed = {
+  title?: string;
+  description?: string;
+  image?: {
+    url: string;
+  };
+  color?: number;
+};
+
+type DiscordFollowupPayload = {
+  content: string;
+  flags?: number;
+  embeds?: DiscordEmbed[];
+};
+
 const postJson = async (url: string, body: unknown): Promise<void> =>
   new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
@@ -39,9 +54,13 @@ const postJson = async (url: string, body: unknown): Promise<void> =>
 export const postDiscordFollowup = async (
   applicationId: string,
   token: string,
-  content: string,
+  contentOrPayload: string | DiscordFollowupPayload,
   flags?: number,
 ): Promise<void> => {
   const url = `${DISCORD_API_BASE_URL}/webhooks/${applicationId}/${token}`;
-  await postJson(url, flags ? { content, flags } : { content });
+  const body =
+    typeof contentOrPayload === 'string'
+      ? (flags ? { content: contentOrPayload, flags } : { content: contentOrPayload })
+      : contentOrPayload;
+  await postJson(url, body);
 };

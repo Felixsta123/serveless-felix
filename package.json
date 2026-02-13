@@ -41,11 +41,14 @@
     "@google-cloud/firestore": "^8.2.0",
     "@google-cloud/functions-framework": "^5.0.0",
     "@google-cloud/pubsub": "^5.2.2",
+    "@google-cloud/storage": "^7.19.0",
     "cloudevents": "^10.0.0",
-    "firebase-admin": "^13.6.1"
+    "firebase-admin": "^13.6.1",
+    "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.0.9",
+    "@types/pngjs": "^6.0.5",
     "tsx": "^4.20.5",
     "typescript": "^5.9.3"
   }

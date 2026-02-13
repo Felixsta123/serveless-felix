@@ -49,6 +49,24 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
     serviceAccount: 'worker',
+    envByEnvironment: {
+      dev: {
+        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
+        SNAPSHOT_BUCKET: 'serverless-felix-dev-snapshots',
+      },
+      prd: {
+        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
+        SNAPSHOT_BUCKET: 'serverless-felix-prd-snapshots',
+      },
+    },
+    envFromProcess: [
+      'DISCORD_ADMIN_ROLE_ID',
+      'CANVAS_CHUNK_SIZE',
+      'SNAPSHOT_PIXEL_SCALE',
+      'SNAPSHOT_MAX_DIM',
+      'SNAPSHOT_URL_TTL_SECONDS',
+      'SNAPSHOT_MAX_CHUNKS',
+    ],
   },
   workerDiscord: {
     trigger: 'topic',
@@ -56,9 +74,11 @@ export const functions = {
     serviceAccount: 'worker',
     envByEnvironment: {
       dev: {
+        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
         WEB_APP_URL: 'https://serverless-felix-dev.web.app',
       },
       prd: {
+        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
         WEB_APP_URL: 'https://serverless-felix-prd.web.app',
       },
     },
