@@ -3,6 +3,12 @@ import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
+import {
+  getWorkerContext,
+  logError,
+  logInfo,
+  logWarn,
+} from '../../shared/observability.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
@@ -39,7 +45,8 @@ const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null =>
 const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
   const raw = extractMessageData(event);
   if (!raw) {
-    console.log('workerDiscord missing message data', {
+    logWarn('worker_discord_missing_message_data', {
+      eventId: event.id ?? null,
       dataType: typeof event.data,
       hasMessage: Boolean(event.data?.message),
     });
@@ -52,7 +59,10 @@ const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
     try {
       return JSON.parse(raw) as JobPayload;
     } catch (fallbackError) {
-      console.error('workerDiscord failed to parse job payload', error, fallbackError);
+      logError('worker_discord_parse_failed', fallbackError, {
+        eventId: event.id ?? null,
+        primaryError: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -61,15 +71,23 @@ const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
 export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
   const job = parseJob(event);
   if (!job) {
-    console.log('workerDiscord ignored message', event.id ?? 'unknown');
+    logWarn('worker_discord_ignored_invalid_payload', {
+      eventId: event.id ?? null,
+    });
     return;
   }
+  const context = getWorkerContext(event, job);
 
   if (job.kind === 'discord.followup') {
     try {
       await postDiscordFollowup(job.applicationId, job.token, job.content);
+      logInfo('worker_discord_followup_sent', {
+        ...context,
+      });
     } catch (error) {
-      console.error('workerDiscord failed to send followup', error);
+      logError('worker_discord_followup_failed', error, {
+        ...context,
+      });
     }
     return;
   }
@@ -80,7 +98,10 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
 
   const interaction = job.interaction;
   if (!interaction?.applicationId || !interaction?.token) {
-    console.error('workerDiscord missing applicationId or token', interaction);
+    logWarn('worker_discord_missing_interaction_metadata', {
+      ...context,
+      kind: job.kind,
+    });
     return;
   }
 
@@ -91,15 +112,30 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
         interaction.token,
         `🎨 **Pixel Canvas is live!**\n\n🔗 ${WEB_APP_URL}\n\nLog in with Discord to draw pixels!`,
       );
+      logInfo('worker_discord_canvas_followup_sent', {
+        ...context,
+        userId: job.userId ?? null,
+      });
     } catch (error) {
-      console.error('workerDiscord failed to send canvas followup', error);
+      logError('worker_discord_canvas_followup_failed', error, {
+        ...context,
+        userId: job.userId ?? null,
+      });
     }
     return;
   }
 
   const adminRoleId = process.env.DISCORD_ADMIN_ROLE_ID;
   if (!adminRoleId) {
-    console.error('workerDiscord DISCORD_ADMIN_ROLE_ID is not configured');
+    logError(
+      'worker_discord_missing_admin_role_config',
+      new Error('DISCORD_ADMIN_ROLE_ID is not configured'),
+      {
+        ...context,
+        action: job.action,
+        userId: job.userId,
+      },
+    );
     try {
       await postDiscordFollowup(
         interaction.applicationId,
@@ -108,12 +144,21 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
         64,
       );
     } catch (error) {
-      console.error('workerDiscord failed to send admin config error', error);
+      logError('worker_discord_admin_config_followup_failed', error, {
+        ...context,
+        action: job.action,
+        userId: job.userId,
+      });
     }
     return;
   }
 
   if (!interaction.roles?.includes(adminRoleId)) {
+    logWarn('worker_discord_admin_role_rejected', {
+      ...context,
+      action: job.action,
+      userId: job.userId,
+    });
     try {
       await postDiscordFollowup(
         interaction.applicationId,
@@ -122,7 +167,11 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
         64,
       );
     } catch (error) {
-      console.error('workerDiscord failed to send admin rejection', error);
+      logError('worker_discord_admin_rejection_followup_failed', error, {
+        ...context,
+        action: job.action,
+        userId: job.userId,
+      });
     }
     return;
   }
@@ -147,8 +196,19 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       interaction.token,
       `Session updated: ${nextState}.`,
     );
+    logInfo('worker_discord_session_updated', {
+      ...context,
+      action: job.action,
+      nextState,
+      userId: job.userId,
+    });
   } catch (error) {
-    console.error('workerDiscord failed to update session', error);
+    logError('worker_discord_session_update_failed', error, {
+      ...context,
+      action: job.action,
+      nextState,
+      userId: job.userId,
+    });
     try {
       await postDiscordFollowup(
         interaction.applicationId,
@@ -157,7 +217,12 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
         64,
       );
     } catch (followupError) {
-      console.error('workerDiscord failed to send error followup', followupError);
+      logError('worker_discord_session_error_followup_failed', followupError, {
+        ...context,
+        action: job.action,
+        nextState,
+        userId: job.userId,
+      });
     }
   }
 };

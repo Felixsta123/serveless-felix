@@ -1,6 +1,13 @@
 import { HttpFunction } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { DrawJobPayload, publishJob } from '../../shared/queue.js';
+import {
+  getHttpRequestContext,
+  logError,
+  logInfo,
+  logWarn,
+  type RequestContext,
+} from '../../shared/observability.js';
 
 const firestore = new Firestore();
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
@@ -29,14 +36,22 @@ const setCorsHeaders = (res: Parameters<HttpFunction>[1]) => {
 
 const validateSession = async (
   sessionToken: string | undefined,
+  requestContext: RequestContext,
+  path: string,
 ): Promise<SessionData | null> => {
   if (!sessionToken) {
-    console.log('validateSession: missing X-Session-Token header');
+    logWarn('web_proxy_session_token_missing', {
+      ...requestContext,
+      path,
+    });
     return null;
   }
   const token = sessionToken.trim();
   if (!token) {
-    console.log('validateSession: empty token');
+    logWarn('web_proxy_session_token_empty', {
+      ...requestContext,
+      path,
+    });
     return null;
   }
 
@@ -46,22 +61,33 @@ const validateSession = async (
   const snapshot = await query.get();
 
   if (snapshot.empty) {
-    console.log('validateSession: no session found for token');
+    logWarn('web_proxy_session_not_found', {
+      ...requestContext,
+      path,
+    });
     return null;
   }
 
   const doc = snapshot.docs[0];
   const data = doc.data() as SessionData;
-  console.log('validateSession: found session for user', data.discordUserId);
 
   if (data.status !== 'ready') {
-    console.log('validateSession: session is not ready');
+    logWarn('web_proxy_session_not_ready', {
+      ...requestContext,
+      path,
+      userId: data.discordUserId,
+      status: data.status,
+    });
     return null;
   }
 
   // Check expiration
   if (!data.expiresAt || data.expiresAt.toDate() < new Date()) {
-    console.log('validateSession: session expired');
+    logWarn('web_proxy_session_expired', {
+      ...requestContext,
+      path,
+      userId: data.discordUserId,
+    });
     return null;
   }
 
@@ -93,7 +119,14 @@ const normalizeColor = (value: unknown): string | null => {
 };
 
 export const webProxy: HttpFunction = async (req, res) => {
+  const requestContext = getHttpRequestContext(req);
+
   if (!WEB_APP_URL) {
+    logError('web_proxy_missing_web_app_url', new Error('WEB_APP_URL is not configured'), {
+      ...requestContext,
+      path: req.path,
+      method: req.method,
+    });
     res.status(500).json({ error: 'WEB_APP_URL is not configured' });
     return;
   }
@@ -101,6 +134,10 @@ export const webProxy: HttpFunction = async (req, res) => {
   setCorsHeaders(res);
 
   if (req.method === 'OPTIONS') {
+    logInfo('web_proxy_preflight', {
+      ...requestContext,
+      path: req.path,
+    });
     res.status(204).send('');
     return;
   }
@@ -118,10 +155,18 @@ export const webProxy: HttpFunction = async (req, res) => {
   if (req.method === 'GET' && path === '/session') {
     const state = req.query.state as string | undefined;
     if (!state) {
+      logWarn('web_proxy_session_missing_state', {
+        ...requestContext,
+        path,
+      });
       res.status(400).json({ error: 'Missing state parameter' });
       return;
     }
     if (!STATE_PATTERN.test(state)) {
+      logWarn('web_proxy_session_invalid_state', {
+        ...requestContext,
+        path,
+      });
       res.status(400).json({ error: 'Invalid state parameter' });
       return;
     }
@@ -130,21 +175,46 @@ export const webProxy: HttpFunction = async (req, res) => {
     const sessionSnap = await sessionRef.get();
 
     if (!sessionSnap.exists) {
+      logInfo('web_proxy_session_pending_not_found', {
+        ...requestContext,
+        path,
+        state,
+      });
       res.status(404).json({ status: 'pending' });
       return;
     }
 
     const data = sessionSnap.data() as SessionData;
     if (data.status === 'error') {
+      logWarn('web_proxy_session_error', {
+        ...requestContext,
+        path,
+        state,
+      });
       res.status(400).json({ status: 'error', error: data.error });
       return;
     }
 
     if (data.status === 'ready') {
       if (!data.token || !data.firebaseCustomToken) {
+        logError(
+          'web_proxy_session_missing_tokens',
+          new Error('Session is missing required tokens'),
+          {
+            ...requestContext,
+            path,
+            state,
+          },
+        );
         res.status(500).json({ status: 'error', error: 'Session is missing required tokens' });
         return;
       }
+      logInfo('web_proxy_session_ready', {
+        ...requestContext,
+        path,
+        state,
+        userId: data.discordUserId,
+      });
       res.status(200).json({
         status: 'ready',
         apiToken: data.token,
@@ -164,14 +234,27 @@ export const webProxy: HttpFunction = async (req, res) => {
 
   // POST /draw - Draw a pixel (authenticated)
   if (req.method === 'POST' && path === '/draw') {
-    const session = await validateSession(req.headers['x-session-token'] as string | undefined);
+    const session = await validateSession(
+      req.headers['x-session-token'] as string | undefined,
+      requestContext,
+      path,
+    );
     if (!session) {
+      logWarn('web_proxy_draw_unauthorized', {
+        ...requestContext,
+        path,
+      });
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
     const body = req.body as Record<string, unknown> | undefined;
     if (!body) {
+      logWarn('web_proxy_draw_missing_body', {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+      });
       res.status(400).json({ error: 'Missing request body' });
       return;
     }
@@ -181,6 +264,11 @@ export const webProxy: HttpFunction = async (req, res) => {
     const color = normalizeColor(body.color);
 
     if (x === null || y === null || !color) {
+      logWarn('web_proxy_draw_invalid_params', {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+      });
       res.status(400).json({ error: 'Invalid parameters. Required: x (int), y (int), color (hex)' });
       return;
     }
@@ -188,6 +276,9 @@ export const webProxy: HttpFunction = async (req, res) => {
     const payload: DrawJobPayload = {
       kind: 'draw.requested',
       receivedAt: new Date().toISOString(),
+      correlationId: requestContext.correlationId,
+      requestId: requestContext.requestId,
+      traceId: requestContext.traceId,
       source: 'web',
       userId: session.discordUserId,
       x,
@@ -197,8 +288,21 @@ export const webProxy: HttpFunction = async (req, res) => {
 
     try {
       await publishJob(payload, { source: 'web', kind: 'draw.requested' });
+      logInfo('web_proxy_draw_enqueued', {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+        x,
+        y,
+      });
     } catch (error) {
-      console.error('webProxy failed to publish draw job', error);
+      logError('web_proxy_draw_publish_failed', error, {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+        x,
+        y,
+      });
       res.status(500).json({ error: 'Failed to enqueue draw request' });
       return;
     }
@@ -208,5 +312,10 @@ export const webProxy: HttpFunction = async (req, res) => {
   }
 
   // Default: 404
+  logWarn('web_proxy_not_found', {
+    ...requestContext,
+    path,
+    method: req.method,
+  });
   res.status(404).json({ error: 'Not found' });
 };

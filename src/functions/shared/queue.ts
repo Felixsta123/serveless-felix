@@ -1,5 +1,11 @@
 import { PubSub } from '@google-cloud/pubsub';
 
+type JobMeta = {
+  correlationId?: string;
+  requestId?: string;
+  traceId?: string;
+};
+
 export type InteractionMeta = {
   id: string;
   token?: string;
@@ -10,7 +16,7 @@ export type InteractionMeta = {
   roles?: string[];
 };
 
-export type DrawJobPayload = {
+export type DrawJobPayload = JobMeta & {
   kind: 'draw.requested';
   receivedAt: string;
   source: 'discord' | 'web';
@@ -21,7 +27,7 @@ export type DrawJobPayload = {
   interaction?: InteractionMeta;
 };
 
-export type CanvasJobPayload = {
+export type CanvasJobPayload = JobMeta & {
   kind: 'canvas.requested';
   receivedAt: string;
   source: 'discord' | 'web';
@@ -29,7 +35,7 @@ export type CanvasJobPayload = {
   interaction?: InteractionMeta;
 };
 
-export type SessionJobPayload = {
+export type SessionJobPayload = JobMeta & {
   kind: 'session.command';
   receivedAt: string;
   source: 'discord' | 'web';
@@ -38,7 +44,7 @@ export type SessionJobPayload = {
   interaction?: InteractionMeta;
 };
 
-export type SnapshotJobPayload = {
+export type SnapshotJobPayload = JobMeta & {
   kind: 'snapshot.requested';
   receivedAt: string;
   source: 'discord' | 'web';
@@ -46,7 +52,7 @@ export type SnapshotJobPayload = {
   interaction?: InteractionMeta;
 };
 
-export type DiscordFollowupJobPayload = {
+export type DiscordFollowupJobPayload = JobMeta & {
   kind: 'discord.followup';
   receivedAt: string;
   applicationId: string;
@@ -54,7 +60,7 @@ export type DiscordFollowupJobPayload = {
   content: string;
 };
 
-export type OAuthExchangeJobPayload = {
+export type OAuthExchangeJobPayload = JobMeta & {
   kind: 'oauth.exchange';
   receivedAt: string;
   code: string;

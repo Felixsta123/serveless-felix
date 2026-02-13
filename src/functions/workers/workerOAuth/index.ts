@@ -5,6 +5,12 @@ import crypto from 'node:crypto';
 import admin from 'firebase-admin';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { JobPayload } from '../../shared/queue.js';
+import {
+  getWorkerContext,
+  logError,
+  logInfo,
+  logWarn,
+} from '../../shared/observability.js';
 
 const firestore = new Firestore();
 
@@ -130,7 +136,8 @@ const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null =>
 const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
   const raw = extractMessageData(event);
   if (!raw) {
-    console.log('workerOAuth missing message data', {
+    logWarn('worker_oauth_missing_message_data', {
+      eventId: event.id ?? null,
       dataType: typeof event.data,
       hasMessage: Boolean(event.data?.message),
     });
@@ -143,7 +150,10 @@ const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
     try {
       return JSON.parse(raw) as JobPayload;
     } catch (fallbackError) {
-      console.error('workerOAuth failed to parse job payload', error, fallbackError);
+      logError('worker_oauth_parse_failed', fallbackError, {
+        eventId: event.id ?? null,
+        primaryError: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -154,9 +164,16 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
   if (!job || job.kind !== 'oauth.exchange') {
     return;
   }
+  const context = getWorkerContext(event, job);
 
   if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
-    console.error('workerOAuth is not configured with Discord OAuth credentials');
+    logError(
+      'worker_oauth_missing_credentials',
+      new Error('Discord OAuth credentials are not configured'),
+      {
+        ...context,
+      },
+    );
     return;
   }
 
@@ -165,11 +182,18 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
   try {
     // Exchange code for access token
     const tokenResponse = await exchangeCodeForToken(code, redirectUri);
-    console.log('workerOAuth got token for state', state);
+    logInfo('worker_oauth_token_exchanged', {
+      ...context,
+      oauthState: state,
+    });
 
     // Fetch user info
     const user = await fetchDiscordUser(tokenResponse.access_token);
-    console.log('workerOAuth got user', user.id, user.username);
+    logInfo('worker_oauth_user_fetched', {
+      ...context,
+      oauthState: state,
+      userId: user.id,
+    });
 
     // Mint Firebase custom token used by the SPA for authenticated Firestore reads
     const firebaseCustomToken = await adminAuth().createCustomToken(user.id, {
@@ -196,17 +220,35 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
       status: 'ready',
     });
 
-    console.log('workerOAuth created session for user', user.id);
+    logInfo('worker_oauth_session_ready', {
+      ...context,
+      oauthState: state,
+      userId: user.id,
+    });
   } catch (error) {
-    console.error('workerOAuth failed to exchange token', error);
+    logError('worker_oauth_exchange_failed', error, {
+      ...context,
+      oauthState: state,
+    });
 
     // Store error state so web app can show error
     const sessionRef = firestore.doc(`sessions/${state}`);
-    await sessionRef.set({
-      state,
-      status: 'error',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      createdAt: Timestamp.now(),
-    });
+    try {
+      await sessionRef.set({
+        state,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        createdAt: Timestamp.now(),
+      });
+      logInfo('worker_oauth_session_error_written', {
+        ...context,
+        oauthState: state,
+      });
+    } catch (sessionWriteError) {
+      logError('worker_oauth_session_error_write_failed', sessionWriteError, {
+        ...context,
+        oauthState: state,
+      });
+    }
   }
 };

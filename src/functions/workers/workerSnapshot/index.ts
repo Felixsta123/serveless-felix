@@ -5,6 +5,12 @@ import { PNG } from 'pngjs';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
+import {
+  getWorkerContext,
+  logError,
+  logInfo,
+  logWarn,
+} from '../../shared/observability.js';
 
 const firestore = new Firestore();
 const storage = new Storage();
@@ -290,15 +296,24 @@ const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null =>
 const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
   const raw = extractMessageData(event);
   if (!raw) {
+    logWarn('worker_snapshot_missing_message_data', {
+      eventId: event.id ?? null,
+      dataType: typeof event.data,
+      hasMessage: Boolean(event.data?.message),
+    });
     return null;
   }
   try {
     const decoded = Buffer.from(raw, 'base64').toString('utf8');
     return JSON.parse(decoded) as JobPayload;
-  } catch {
+  } catch (error) {
     try {
       return JSON.parse(raw) as JobPayload;
-    } catch {
+    } catch (fallbackError) {
+      logError('worker_snapshot_parse_failed', fallbackError, {
+        eventId: event.id ?? null,
+        primaryError: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -309,8 +324,13 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
   if (!job || job.kind !== 'snapshot.requested') {
     return;
   }
+  const context = getWorkerContext(event, job);
 
   if (!job.interaction?.applicationId || !job.interaction.token) {
+    logWarn('worker_snapshot_missing_interaction_metadata', {
+      ...context,
+      userId: job.userId,
+    });
     return;
   }
 
@@ -318,18 +338,33 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
     DISCORD_ADMIN_ROLE_ID &&
     !job.interaction.roles?.includes(DISCORD_ADMIN_ROLE_ID)
   ) {
-    await postDiscordFollowup(
-      job.interaction.applicationId,
-      job.interaction.token,
-      'You are not allowed to create snapshots.',
-      64,
-    );
+    logWarn('worker_snapshot_admin_role_rejected', {
+      ...context,
+      userId: job.userId,
+    });
+    try {
+      await postDiscordFollowup(
+        job.interaction.applicationId,
+        job.interaction.token,
+        'You are not allowed to create snapshots.',
+        64,
+      );
+    } catch (error) {
+      logError('worker_snapshot_admin_rejection_followup_failed', error, {
+        ...context,
+        userId: job.userId,
+      });
+    }
     return;
   }
 
   try {
     const loaded = await loadSnapshotPixels();
     if (!loaded || loaded.pixels.length === 0) {
+      logInfo('worker_snapshot_no_pixels', {
+        ...context,
+        userId: job.userId,
+      });
       await postDiscordFollowup(
         job.interaction.applicationId,
         job.interaction.token,
@@ -359,8 +394,19 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
         ],
       },
     );
+    logInfo('worker_snapshot_completed', {
+      ...context,
+      userId: job.userId,
+      width: rendered.width,
+      height: rendered.height,
+      scale: rendered.scale,
+      pixels: loaded.pixels.length,
+    });
   } catch (error) {
-    console.error('workerSnapshot failed', error);
+    logError('worker_snapshot_failed', error, {
+      ...context,
+      userId: job.userId,
+    });
     try {
       await postDiscordFollowup(
         job.interaction.applicationId,
@@ -369,7 +415,10 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
         64,
       );
     } catch (followupError) {
-      console.error('workerSnapshot failed to send error followup', followupError);
+      logError('worker_snapshot_error_followup_failed', followupError, {
+        ...context,
+        userId: job.userId,
+      });
     }
   }
 };

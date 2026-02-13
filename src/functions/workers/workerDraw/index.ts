@@ -3,6 +3,12 @@ import { Firestore, Timestamp, FieldValue } from '@google-cloud/firestore';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
+import {
+  getWorkerContext,
+  logError,
+  logInfo,
+  logWarn,
+} from '../../shared/observability.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
@@ -42,7 +48,8 @@ const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null =>
 const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
   const raw = extractMessageData(event);
   if (!raw) {
-    console.log('workerDraw missing message data', {
+    logWarn('worker_draw_missing_message_data', {
+      eventId: event.id ?? null,
       dataType: typeof event.data,
       hasMessage: Boolean(event.data?.message),
     });
@@ -55,7 +62,10 @@ const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
     try {
       return JSON.parse(raw) as JobPayload;
     } catch (fallbackError) {
-      console.error('workerDraw failed to parse job payload', error, fallbackError);
+      logError('worker_draw_parse_failed', fallbackError, {
+        eventId: event.id ?? null,
+        primaryError: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -83,6 +93,7 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
   if (!job || job.kind !== 'draw.requested') {
     return;
   }
+  const context = getWorkerContext(event, job);
 
   const eventId =
     job.interaction?.id ?? `${job.userId}:${job.receivedAt}:${job.x}:${job.y}`;
@@ -96,85 +107,106 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
   const pixelRef = firestore.doc(`chunks/${chunkId}/pixels/${pixelId}`);
   const eventRef = firestore.doc(`eventsByDay/${minuteKey.slice(0, 8)}/items/${eventId}`);
 
-  const result = await firestore.runTransaction(async (tx) => {
-    const [idempotencySnap, rateSnap, pixelSnap, sessionSnap, activeSnap] =
-      await Promise.all([
-        tx.get(idempotencyRef),
-        tx.get(rateRef),
-        tx.get(pixelRef),
-        tx.get(sessionRef),
-        tx.get(activeAreaRef),
-      ]);
+  let result: { status: 'duplicate' | 'paused' | 'rate_limited' | 'ok' };
+  try {
+    result = await firestore.runTransaction(async (tx) => {
+      const [idempotencySnap, rateSnap, pixelSnap, sessionSnap, activeSnap] =
+        await Promise.all([
+          tx.get(idempotencyRef),
+          tx.get(rateRef),
+          tx.get(pixelRef),
+          tx.get(sessionRef),
+          tx.get(activeAreaRef),
+        ]);
 
-    if (idempotencySnap.exists) {
-      return { status: 'duplicate' as const };
-    }
+      if (idempotencySnap.exists) {
+        return { status: 'duplicate' as const };
+      }
 
-    const sessionState = sessionSnap.exists
-      ? (sessionSnap.data()?.state as string | undefined)
-      : 'running';
-    if (sessionState === 'paused') {
-      return { status: 'paused' as const };
-    }
+      const sessionState = sessionSnap.exists
+        ? (sessionSnap.data()?.state as string | undefined)
+        : 'running';
+      if (sessionState === 'paused') {
+        return { status: 'paused' as const };
+      }
 
-    const currentCount = (rateSnap.data()?.count as number | undefined) ?? 0;
-    if (currentCount >= RATE_LIMIT_PER_MINUTE) {
-      return { status: 'rate_limited' as const };
-    }
+      const currentCount = (rateSnap.data()?.count as number | undefined) ?? 0;
+      if (currentCount >= RATE_LIMIT_PER_MINUTE) {
+        return { status: 'rate_limited' as const };
+      }
 
-    const oldColor = pixelSnap.data()?.color as string | undefined;
-    const timestamp = Timestamp.now();
+      const oldColor = pixelSnap.data()?.color as string | undefined;
+      const timestamp = Timestamp.now();
 
-    tx.set(idempotencyRef, { createdAt: timestamp });
-    tx.set(rateRef, { count: FieldValue.increment(1) }, { merge: true });
-    tx.set(
-      pixelRef,
-      {
-        x: job.x,
-        y: job.y,
-        color: job.color,
-        updatedAt: timestamp,
-        authorId: job.userId,
-      },
-      { merge: true },
-    );
-    tx.set(
-      eventRef,
-      {
-        ts: timestamp,
-        source: job.source,
-        userId: job.userId,
-        guildId: job.interaction?.guildId ?? null,
-        x: job.x,
-        y: job.y,
-        newColor: job.color,
-        oldColor: oldColor ?? null,
-      },
-      { merge: true },
-    );
+      tx.set(idempotencyRef, { createdAt: timestamp });
+      tx.set(rateRef, { count: FieldValue.increment(1) }, { merge: true });
+      tx.set(
+        pixelRef,
+        {
+          x: job.x,
+          y: job.y,
+          color: job.color,
+          updatedAt: timestamp,
+          authorId: job.userId,
+        },
+        { merge: true },
+      );
+      tx.set(
+        eventRef,
+        {
+          ts: timestamp,
+          source: job.source,
+          userId: job.userId,
+          guildId: job.interaction?.guildId ?? null,
+          x: job.x,
+          y: job.y,
+          newColor: job.color,
+          oldColor: oldColor ?? null,
+        },
+        { merge: true },
+      );
 
-    const activeData = activeSnap.data() as
-      | { minX?: number; minY?: number; maxX?: number; maxY?: number }
-      | undefined;
-    const next = {
-      minX: activeData?.minX ?? job.x,
-      minY: activeData?.minY ?? job.y,
-      maxX: activeData?.maxX ?? job.x,
-      maxY: activeData?.maxY ?? job.y,
-    };
-    tx.set(
-      activeAreaRef,
-      {
-        minX: Math.min(next.minX, job.x),
-        minY: Math.min(next.minY, job.y),
-        maxX: Math.max(next.maxX, job.x),
-        maxY: Math.max(next.maxY, job.y),
-        updatedAt: timestamp,
-      },
-      { merge: true },
-    );
+      const activeData = activeSnap.data() as
+        | { minX?: number; minY?: number; maxX?: number; maxY?: number }
+        | undefined;
+      const next = {
+        minX: activeData?.minX ?? job.x,
+        minY: activeData?.minY ?? job.y,
+        maxX: activeData?.maxX ?? job.x,
+        maxY: activeData?.maxY ?? job.y,
+      };
+      tx.set(
+        activeAreaRef,
+        {
+          minX: Math.min(next.minX, job.x),
+          minY: Math.min(next.minY, job.y),
+          maxX: Math.max(next.maxX, job.x),
+          maxY: Math.max(next.maxY, job.y),
+          updatedAt: timestamp,
+        },
+        { merge: true },
+      );
 
-    return { status: 'ok' as const };
+      return { status: 'ok' as const };
+    });
+  } catch (error) {
+    logError('worker_draw_transaction_failed', error, {
+      ...context,
+      userId: job.userId,
+      source: job.source,
+      x: job.x,
+      y: job.y,
+    });
+    return;
+  }
+
+  logInfo('worker_draw_processed', {
+    ...context,
+    status: result.status,
+    userId: job.userId,
+    source: job.source,
+    x: job.x,
+    y: job.y,
   });
 
   if (job.source !== 'discord' || !job.interaction?.applicationId || !job.interaction.token) {
@@ -186,7 +218,11 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
     try {
       await postDiscordFollowup(applicationId, token, content, flags);
     } catch (error) {
-      console.error('workerDraw failed to send followup', error);
+      logError('worker_draw_followup_failed', error, {
+        ...context,
+        status: result.status,
+        userId: job.userId,
+      });
     }
   };
 

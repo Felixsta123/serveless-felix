@@ -8,6 +8,12 @@ import {
 } from '../../shared/discord.js';
 import { resolveDiscordCommand } from '../../shared/discordCommands.js';
 import { JobPayload, publishJob } from '../../shared/queue.js';
+import {
+  getHttpRequestContext,
+  logError,
+  logInfo,
+  logWarn,
+} from '../../shared/observability.js';
 
 type DiscordOption = {
   name?: string;
@@ -66,24 +72,39 @@ const normalizeColor = (value: unknown): string | null => {
 };
 
 export const discordProxy: HttpFunction = async (req, res) => {
+  const requestContext = getHttpRequestContext(req);
+
   if (req.method !== 'POST') {
+    logWarn('discord_proxy_method_not_allowed', {
+      ...requestContext,
+      method: req.method,
+    });
     res.status(405).set('Allow', 'POST').send({ message: 'Method Not Allowed' });
     return;
   }
 
   const publicKey = process.env.DISCORD_PUBLIC_KEY;
   if (!publicKey) {
+    logError('discord_proxy_missing_public_key', new Error('DISCORD_PUBLIC_KEY is not set'), {
+      ...requestContext,
+    });
     res.status(500).send({ message: 'DISCORD_PUBLIC_KEY is not set' });
     return;
   }
 
   if (!verifyDiscordRequest(req, publicKey)) {
+    logWarn('discord_proxy_invalid_signature', {
+      ...requestContext,
+    });
     res.status(401).send({ message: 'Invalid request signature' });
     return;
   }
 
   const interaction = parseDiscordInteraction(req);
   if (!interaction) {
+    logWarn('discord_proxy_invalid_body', {
+      ...requestContext,
+    });
     res.status(400).send({ message: 'Invalid JSON body' });
     return;
   }
@@ -94,12 +115,21 @@ export const discordProxy: HttpFunction = async (req, res) => {
   }
 
   if (interaction.type !== InteractionType.ApplicationCommand) {
+    logWarn('discord_proxy_unsupported_interaction_type', {
+      ...requestContext,
+      interactionType: interaction.type,
+    });
     res.status(400).send({ message: 'Unsupported interaction type' });
     return;
   }
 
   const command = resolveDiscordCommand(interaction);
   if (!command) {
+    logWarn('discord_proxy_unknown_command', {
+      ...requestContext,
+      commandName: interaction.data?.name,
+      interactionId: interaction.id,
+    });
     res.status(200).json({
       type: InteractionResponseType.ChannelMessageWithSource,
       data: {
@@ -112,12 +142,22 @@ export const discordProxy: HttpFunction = async (req, res) => {
 
   const allowedGuildId = process.env.DISCORD_ALLOWED_GUILD_ID;
   if (allowedGuildId && interaction.guild_id && interaction.guild_id !== allowedGuildId) {
+    logWarn('discord_proxy_guild_not_allowed', {
+      ...requestContext,
+      interactionId: interaction.id,
+      guildId: interaction.guild_id,
+      allowedGuildId,
+    });
     respondEphemeral(res, 'This command is not allowed in this server.');
     return;
   }
 
   const userId = getInteractionUserId(interaction);
   if (!userId) {
+    logWarn('discord_proxy_missing_user_id', {
+      ...requestContext,
+      interactionId: interaction.id,
+    });
     respondEphemeral(res, 'Unable to identify the user for this command.');
     return;
   }
@@ -148,6 +188,9 @@ export const discordProxy: HttpFunction = async (req, res) => {
       payload = {
         kind: 'draw.requested',
         receivedAt,
+        correlationId: requestContext.correlationId,
+        requestId: requestContext.requestId,
+        traceId: requestContext.traceId,
         source: 'discord',
         userId,
         x: xValue,
@@ -161,6 +204,9 @@ export const discordProxy: HttpFunction = async (req, res) => {
       payload = {
         kind: 'canvas.requested',
         receivedAt,
+        correlationId: requestContext.correlationId,
+        requestId: requestContext.requestId,
+        traceId: requestContext.traceId,
         source: 'discord',
         userId,
         interaction: interactionMeta,
@@ -176,6 +222,9 @@ export const discordProxy: HttpFunction = async (req, res) => {
       payload = {
         kind: 'session.command',
         receivedAt,
+        correlationId: requestContext.correlationId,
+        requestId: requestContext.requestId,
+        traceId: requestContext.traceId,
         source: 'discord',
         userId,
         action: actionValue,
@@ -187,6 +236,9 @@ export const discordProxy: HttpFunction = async (req, res) => {
       payload = {
         kind: 'snapshot.requested',
         receivedAt,
+        correlationId: requestContext.correlationId,
+        requestId: requestContext.requestId,
+        traceId: requestContext.traceId,
         source: 'discord',
         userId,
         interaction: interactionMeta,
@@ -203,8 +255,21 @@ export const discordProxy: HttpFunction = async (req, res) => {
       source: 'discord',
       kind: payload.kind,
     });
+    logInfo('discord_proxy_enqueued', {
+      ...requestContext,
+      kind: payload.kind,
+      interactionId: interaction.id,
+      commandName: interaction.data?.name,
+      userId,
+    });
   } catch (error) {
-    console.error('Failed to publish discord job', error);
+    logError('discord_proxy_publish_failed', error, {
+      ...requestContext,
+      kind: payload.kind,
+      interactionId: interaction.id,
+      commandName: interaction.data?.name,
+      userId,
+    });
     res.status(500).json({
       type: InteractionResponseType.ChannelMessageWithSource,
       data: {
