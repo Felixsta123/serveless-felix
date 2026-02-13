@@ -21,21 +21,6 @@ export const drawPixel = async (x: number, y: number, color: string): Promise<vo
   }
 };
 
-// Get active area bounds
-export const getActiveArea = async (): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> => {
-  const res = await fetch(`${config.apiGateway}/web/canvas`);
-  if (!res.ok) throw new Error('Failed to fetch canvas info');
-  return res.json();
-};
-
-// Get pixels for a chunk (used as fallback if Firestore unavailable)
-export const getChunkPixels = async (chunkX: number, chunkY: number): Promise<Pixel[]> => {
-  const res = await fetch(`${config.apiGateway}/web/pixels?chunk=${chunkX}_${chunkY}`);
-  if (!res.ok) throw new Error('Failed to fetch pixels');
-  const data = await res.json();
-  return data.pixels || [];
-};
-
 export type Pixel = {
   x: number;
   y: number;

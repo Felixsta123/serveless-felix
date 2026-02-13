@@ -19,8 +19,9 @@ Build a fully serverless, event-driven pixel canvas (r/place style) with Discord
 
 ## Current implementation status (keep updated when you change it)
 - Implemented: API Gateway template, deployment scripts, discordProxy, workerDiscord, workerDraw, hello function.
-- Implemented (Step 3 - Web Pipeline): oauthProxy, workerOAuth, webProxy with session/auth/draw/pixels endpoints.
+- Implemented (Step 3 - Web Pipeline): oauthProxy, workerOAuth, webProxy with session polling + authenticated draw enqueue.
 - Implemented: Web SPA (Vite + TypeScript + Firebase) with Discord OAuth2, real-time Firestore canvas, pixel drawing.
+- Hardened: deploy scripts enforce `--no-allow-unauthenticated`, dedicated `proxy-sa`/`worker-sa`, and Secret Manager bindings for OAuth/Discord secrets.
 - Deployed: Firebase Hosting at https://serverless-felix-dev.web.app
 - Stubs: workerSnapshot.
 - Firestore schema implemented: chunks/pixels, sessions, activeArea, rate, idempotency, eventsByDay.

@@ -76,13 +76,3 @@ paths:
       responses:
         '200':
           description: OK
-    post:
-      summary: OAuth proxy
-      operationId: oauthPost
-      x-google-backend:
-        address: https://europe-west1-serverless-felix-dev.cloudfunctions.net/oauthProxy
-        path_translation: CONSTANT_ADDRESS
-        jwt_audience: https://europe-west1-serverless-felix-dev.cloudfunctions.net/oauthProxy
-      responses:
-        '200':
-          description: OK

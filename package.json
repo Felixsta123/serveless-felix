@@ -41,7 +41,8 @@
     "@google-cloud/firestore": "^8.2.0",
     "@google-cloud/functions-framework": "^5.0.0",
     "@google-cloud/pubsub": "^5.2.2",
-    "cloudevents": "^10.0.0"
+    "cloudevents": "^10.0.0",
+    "firebase-admin": "^13.6.1"
   },
   "devDependencies": {
     "@types/node": "^25.0.9",

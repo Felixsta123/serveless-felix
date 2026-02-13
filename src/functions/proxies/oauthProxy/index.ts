@@ -5,6 +5,7 @@ import { OAuthExchangeJobPayload, publishJob } from '../../shared/queue.js';
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '';
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI ?? '';
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
+const STATE_PATTERN = /^[a-f0-9]{32}$/i;
 
 const generateState = (): string => crypto.randomBytes(16).toString('hex');
 
@@ -39,6 +40,10 @@ export const oauthProxy: HttpFunction = async (req, res) => {
 
   // Step 1: Initiate OAuth flow - redirect user to Discord
   if (action === 'login') {
+    if (!DISCORD_CLIENT_ID || !DISCORD_REDIRECT_URI) {
+      res.status(500).json({ error: 'OAuth is not configured' });
+      return;
+    }
     const newState = generateState();
     const authUrl = buildDiscordAuthUrl(newState);
     // Set state in cookie for validation on callback
@@ -49,6 +54,11 @@ export const oauthProxy: HttpFunction = async (req, res) => {
 
   // Step 2: Handle OAuth callback from Discord
   if (code && state) {
+    if (!STATE_PATTERN.test(state)) {
+      res.status(400).json({ error: 'Invalid state parameter' });
+      return;
+    }
+
     // Validate state from cookie
     const cookies = req.headers.cookie ?? '';
     const stateCookie = cookies
@@ -84,6 +94,11 @@ export const oauthProxy: HttpFunction = async (req, res) => {
 
     // Redirect to web app with state for session polling
     // Use query param on main page since we're using static hosting (no SPA router)
+    if (!WEB_APP_URL) {
+      res.status(500).json({ error: 'Web application URL is not configured' });
+      return;
+    }
+
     const redirectUrl = `${WEB_APP_URL}?oauth_state=${encodeURIComponent(state)}`;
     res.redirect(302, redirectUrl);
     return;

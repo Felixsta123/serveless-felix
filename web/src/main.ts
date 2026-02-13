@@ -7,10 +7,21 @@ import {
   clearSession,
   startLogin,
   pollSession,
+  signInFirebase,
+  signOutFirebase,
+  isFirebaseAuthenticated,
+  waitForFirebaseAuth,
   User,
 } from './auth';
-import { drawPixel, getActiveArea, Pixel } from './api';
-import { initCanvas, subscribeVisible, unsubscribeAll, getState, setOffset, getPixelAt } from './canvas';
+import { drawPixel, Pixel } from './api';
+import {
+  initCanvas,
+  unsubscribeAll,
+  getState,
+  setOffset,
+  getPixelAt,
+  getActiveArea,
+} from './canvas';
 
 // DOM elements
 const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
@@ -110,20 +121,32 @@ const handleOAuthCallback = async (): Promise<boolean> => {
 
   const result = await pollSession(state);
   if (result) {
-    setToken(result.token);
-    setUser(result.user);
-    // Clear URL params
-    window.history.replaceState({}, '', window.location.pathname);
-    return true;
-  } else {
-    setStatus('Login failed', 'error');
-    window.history.replaceState({}, '', window.location.pathname);
-    return false;
+    try {
+      await signInFirebase(result.firebaseToken);
+      setToken(result.apiToken);
+      setUser(result.user);
+      updateAuthUI(result.user);
+      // Clear URL params
+      window.history.replaceState({}, '', window.location.pathname);
+      return true;
+    } catch (error) {
+      console.error('Failed to sign in with Firebase custom token', error);
+      clearSession();
+      setStatus('Login failed', 'error');
+      window.history.replaceState({}, '', window.location.pathname);
+      return false;
+    }
   }
+
+  setStatus('Login failed', 'error');
+  window.history.replaceState({}, '', window.location.pathname);
+  return false;
 };
 
 // Initialize app
 const init = async (): Promise<void> => {
+  await waitForFirebaseAuth();
+
   // Check OAuth callback
   if (window.location.search.includes('oauth_state')) {
     await handleOAuthCallback();
@@ -131,38 +154,43 @@ const init = async (): Promise<void> => {
 
   // Restore session
   const token = getToken();
-  if (token) {
-    const user = getUser();
-    if (user) {
-      updateAuthUI(user);
-    }
+  const user = getUser();
+  if (token && user && isFirebaseAuthenticated()) {
+    updateAuthUI(user);
+  } else {
+    clearSession();
+    updateAuthUI(null);
   }
 
   // Initialize canvas
   initCanvas(canvasEl);
 
-  // Get active area and center view
-  try {
-    const area = await getActiveArea();
-    const centerX = Math.floor((area.minX + area.maxX) / 2) - 25;
-    const centerY = Math.floor((area.minY + area.maxY) / 2) - 25;
-    setOffset(Math.max(0, centerX), Math.max(0, centerY));
-    setStatus('Connected', 'success');
-  } catch {
-    setOffset(0, 0);
-    setStatus('Connected (new canvas)', 'success');
+  if (!currentUser) {
+    setOffset(0, 0, false);
+    setStatus('Login required to access the canvas');
+  } else {
+    // Get active area and center view
+    try {
+      const area = await getActiveArea();
+      const centerX = Math.floor((area.minX + area.maxX) / 2) - 25;
+      const centerY = Math.floor((area.minY + area.maxY) / 2) - 25;
+      setOffset(Math.max(0, centerX), Math.max(0, centerY));
+      setStatus('Connected', 'success');
+    } catch {
+      setOffset(0, 0);
+      setStatus('Connected (new canvas)', 'success');
+    }
   }
-
-  // Subscribe to real-time updates
-  subscribeVisible();
 
   // Event listeners
   loginBtn.addEventListener('click', startLogin);
 
-  logoutBtn.addEventListener('click', () => {
+  logoutBtn.addEventListener('click', async () => {
+    await signOutFirebase();
     clearSession();
     updateAuthUI(null);
     unsubscribeAll();
+    setStatus('Logged out');
   });
 
   drawBtn.addEventListener('click', handleDraw);

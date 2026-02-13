@@ -1,6 +1,6 @@
-import { initializeApp } from 'firebase/app';
 import {
-  getFirestore,
+  doc,
+  getDoc,
   collection,
   onSnapshot,
   query,
@@ -8,11 +8,8 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { config } from './config';
+import { db } from './firebase';
 import type { Pixel } from './api';
-
-// Initialize Firebase
-const app = initializeApp(config.firebase);
-const db = getFirestore(app);
 
 // Canvas state
 type CanvasState = {
@@ -49,17 +46,39 @@ export const initCanvas = (el: HTMLCanvasElement): void => {
 export const getState = () => state;
 
 // Set view offset
-export const setOffset = (x: number, y: number): void => {
+export const setOffset = (x: number, y: number, resubscribe = true): void => {
   state.offsetX = x;
   state.offsetY = y;
   unsubscribeAll();
-  subscribeVisible();
+  if (resubscribe) {
+    subscribeVisible();
+  }
   render();
 };
 
 // Get pixel at position
 export const getPixelAt = (x: number, y: number): Pixel | null => {
   return state.pixels.get(key(x, y)) || null;
+};
+
+// Read active area bounds from Firestore
+export const getActiveArea = async (): Promise<{
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}> => {
+  const snap = await getDoc(doc(db, 'activeArea/current'));
+  if (!snap.exists()) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+  const data = snap.data();
+  return {
+    minX: data.minX ?? 0,
+    minY: data.minY ?? 0,
+    maxX: data.maxX ?? 0,
+    maxY: data.maxY ?? 0,
+  };
 };
 
 // Handle canvas click

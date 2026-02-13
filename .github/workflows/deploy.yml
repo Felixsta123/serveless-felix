@@ -46,3 +46,7 @@ jobs:
       - name: Deploy to Prod
         if: github.ref == 'refs/heads/main'
         run: npm run deploy:prd
+
+      - name: Deploy API Gateway (Prod)
+        if: github.ref == 'refs/heads/main'
+        run: npm run deploy:prd:gateway

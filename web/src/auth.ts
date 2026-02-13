@@ -1,4 +1,6 @@
 import { config } from './config';
+import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
+import { auth } from './firebase';
 
 const STORAGE_KEYS = {
   token: 'pixel_canvas_token',
@@ -9,6 +11,12 @@ export type User = {
   id: string;
   username: string;
   avatar: string | null;
+};
+
+export type SessionReady = {
+  apiToken: string;
+  firebaseToken: string;
+  user: User;
 };
 
 // Get stored session token
@@ -49,7 +57,7 @@ export const startLogin = (): void => {
 };
 
 // Poll for session after OAuth callback
-export const pollSession = async (state: string): Promise<{ token: string; user: User } | null> => {
+export const pollSession = async (state: string): Promise<SessionReady | null> => {
   const maxAttempts = 30;
   const interval = 1000;
 
@@ -59,7 +67,11 @@ export const pollSession = async (state: string): Promise<{ token: string; user:
       const data = await res.json();
 
       if (data.status === 'ready') {
-        return { token: data.token, user: data.user };
+        return {
+          apiToken: data.apiToken,
+          firebaseToken: data.firebaseToken,
+          user: data.user,
+        };
       }
       if (data.status === 'error') {
         console.error('OAuth error:', data.error);
@@ -73,4 +85,23 @@ export const pollSession = async (state: string): Promise<{ token: string; user:
     }
   }
   return null;
+};
+
+export const signInFirebase = async (firebaseToken: string): Promise<void> => {
+  await signInWithCustomToken(auth, firebaseToken);
+};
+
+export const signOutFirebase = async (): Promise<void> => {
+  await signOut(auth);
+};
+
+export const isFirebaseAuthenticated = (): boolean => auth.currentUser !== null;
+
+export const waitForFirebaseAuth = async (): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    const unsub = onAuthStateChanged(auth, () => {
+      unsub();
+      resolve();
+    });
+  });
 };

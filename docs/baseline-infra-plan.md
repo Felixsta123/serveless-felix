@@ -22,6 +22,7 @@ Goal: Prepare all GCP serverless infrastructure required by the subject before f
    - `discord_public_key`, `discord_app_id`, `discord_bot_token`
    - `discord_client_id`, `discord_client_secret`, `oauth_redirect_uri`
    - `firebase_service_account`
+   - Add at least one secret version before deploying functions.
 8. Update deploy configuration to use service accounts + secrets (function env + IAM).
 9. Deploy API Gateway config + gateway (dev/prd).
 10. Deploy functions (dev/prd) and verify proxy invocation through API Gateway only.
@@ -29,6 +30,7 @@ Goal: Prepare all GCP serverless infrastructure required by the subject before f
 ## Compliance Notes
 - No function should be public; only API Gateway may invoke proxies.
 - Proxies must only enqueue jobs and ACK immediately.
+- Remove `allUsers` from both Cloud Functions and underlying Cloud Run services for Gen2 functions.
 - Logging/Monitoring/Trace should be enabled from day one.
 
 ## Open Questions

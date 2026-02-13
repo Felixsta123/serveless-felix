@@ -4,12 +4,14 @@ import { DrawJobPayload, publishJob } from '../../shared/queue.js';
 
 const firestore = new Firestore();
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
+const STATE_PATTERN = /^[a-f0-9]{32}$/i;
 
 type SessionData = {
   discordUserId: string;
   discordUsername: string;
   discordAvatar: string | null;
   token: string;
+  firebaseCustomToken?: string;
   state: string;
   expiresAt: Timestamp;
   status: string;
@@ -17,7 +19,9 @@ type SessionData = {
 };
 
 const setCorsHeaders = (res: Parameters<HttpFunction>[1]) => {
-  res.set('Access-Control-Allow-Origin', WEB_APP_URL || '*');
+  if (WEB_APP_URL) {
+    res.set('Access-Control-Allow-Origin', WEB_APP_URL);
+  }
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, X-Session-Token');
   res.set('Access-Control-Allow-Credentials', 'true');
@@ -36,8 +40,6 @@ const validateSession = async (
     return null;
   }
 
-  console.log('validateSession: full token', token);
-
   // Find session by token
   const sessionsRef = firestore.collection('sessions');
   const query = sessionsRef.where('token', '==', token).limit(1);
@@ -52,8 +54,13 @@ const validateSession = async (
   const data = doc.data() as SessionData;
   console.log('validateSession: found session for user', data.discordUserId);
 
+  if (data.status !== 'ready') {
+    console.log('validateSession: session is not ready');
+    return null;
+  }
+
   // Check expiration
-  if (data.expiresAt.toDate() < new Date()) {
+  if (!data.expiresAt || data.expiresAt.toDate() < new Date()) {
     console.log('validateSession: session expired');
     return null;
   }
@@ -86,6 +93,11 @@ const normalizeColor = (value: unknown): string | null => {
 };
 
 export const webProxy: HttpFunction = async (req, res) => {
+  if (!WEB_APP_URL) {
+    res.status(500).json({ error: 'WEB_APP_URL is not configured' });
+    return;
+  }
+
   setCorsHeaders(res);
 
   if (req.method === 'OPTIONS') {
@@ -109,6 +121,10 @@ export const webProxy: HttpFunction = async (req, res) => {
       res.status(400).json({ error: 'Missing state parameter' });
       return;
     }
+    if (!STATE_PATTERN.test(state)) {
+      res.status(400).json({ error: 'Invalid state parameter' });
+      return;
+    }
 
     const sessionRef = firestore.doc(`sessions/${state}`);
     const sessionSnap = await sessionRef.get();
@@ -125,9 +141,14 @@ export const webProxy: HttpFunction = async (req, res) => {
     }
 
     if (data.status === 'ready') {
+      if (!data.token || !data.firebaseCustomToken) {
+        res.status(500).json({ status: 'error', error: 'Session is missing required tokens' });
+        return;
+      }
       res.status(200).json({
         status: 'ready',
-        token: data.token,
+        apiToken: data.token,
+        firebaseToken: data.firebaseCustomToken,
         user: {
           id: data.discordUserId,
           username: data.discordUsername,
@@ -138,42 +159,6 @@ export const webProxy: HttpFunction = async (req, res) => {
     }
 
     res.status(200).json({ status: 'pending' });
-    return;
-  }
-
-  // GET /me - Get current user info
-  if (req.method === 'GET' && path === '/me') {
-    const session = await validateSession(req.headers['x-session-token'] as string | undefined);
-    if (!session) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-
-    res.status(200).json({
-      id: session.discordUserId,
-      username: session.discordUsername,
-      avatar: session.discordAvatar,
-    });
-    return;
-  }
-
-  // GET /canvas - Get active area bounds
-  if (req.method === 'GET' && path === '/canvas') {
-    const activeAreaRef = firestore.doc('activeArea/current');
-    const activeSnap = await activeAreaRef.get();
-
-    if (!activeSnap.exists) {
-      res.status(200).json({ minX: 0, minY: 0, maxX: 0, maxY: 0 });
-      return;
-    }
-
-    const data = activeSnap.data();
-    res.status(200).json({
-      minX: data?.minX ?? 0,
-      minY: data?.minY ?? 0,
-      maxX: data?.maxX ?? 0,
-      maxY: data?.maxY ?? 0,
-    });
     return;
   }
 
@@ -219,32 +204,6 @@ export const webProxy: HttpFunction = async (req, res) => {
     }
 
     res.status(202).json({ message: 'Draw request accepted' });
-    return;
-  }
-
-  // GET /pixels?chunk=x_y - Get pixels for a chunk
-  if (req.method === 'GET' && path === '/pixels') {
-    const chunk = req.query.chunk as string | undefined;
-    if (!chunk || !/^-?\d+_-?\d+$/.test(chunk)) {
-      res.status(400).json({ error: 'Invalid chunk parameter. Format: x_y' });
-      return;
-    }
-
-    const pixelsRef = firestore.collection(`chunks/${chunk}/pixels`);
-    const snapshot = await pixelsRef.get();
-
-    const pixels = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        x: data.x,
-        y: data.y,
-        color: data.color,
-        authorId: data.authorId,
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? null,
-      };
-    });
-
-    res.status(200).json({ chunk, pixels });
     return;
   }
 

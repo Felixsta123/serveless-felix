@@ -2,6 +2,7 @@ import { CloudEvent } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import https from 'node:https';
 import crypto from 'node:crypto';
+import admin from 'firebase-admin';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { JobPayload } from '../../shared/queue.js';
 
@@ -10,6 +11,11 @@ const firestore = new Firestore();
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '';
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET ?? '';
 const SESSION_TTL_HOURS = Number(process.env.SESSION_TTL_HOURS ?? 24);
+
+const adminAuth = () => {
+  const app = admin.apps.length > 0 ? admin.app() : admin.initializeApp();
+  return admin.auth(app);
+};
 
 type DiscordTokenResponse = {
   access_token: string;
@@ -149,6 +155,11 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
     return;
   }
 
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    console.error('workerOAuth is not configured with Discord OAuth credentials');
+    return;
+  }
+
   const { code, state, redirectUri } = job;
 
   try {
@@ -159,6 +170,11 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
     // Fetch user info
     const user = await fetchDiscordUser(tokenResponse.access_token);
     console.log('workerOAuth got user', user.id, user.username);
+
+    // Mint Firebase custom token used by the SPA for authenticated Firestore reads
+    const firebaseCustomToken = await adminAuth().createCustomToken(user.id, {
+      discordUsername: user.global_name ?? user.username,
+    });
 
     // Create session in Firestore
     const sessionToken = generateSessionToken();
@@ -173,6 +189,7 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
       discordUsername: user.global_name ?? user.username,
       discordAvatar: user.avatar,
       token: sessionToken,
+      firebaseCustomToken,
       state,
       createdAt: now,
       expiresAt,

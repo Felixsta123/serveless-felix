@@ -38,7 +38,14 @@ const run = (args, options = {}) => {
   }
 };
 
+const runOptional = (args, options = {}) => {
+  spawnSync('gcloud', args, { stdio: 'inherit', ...options });
+};
+
 const exists = (args) => spawnSync('gcloud', args, { stdio: 'ignore' }).status === 0;
+
+const proxyFunctions = ['discordProxy', 'webProxy', 'oauthProxy'];
+const lockDownFunctions = [...proxyFunctions, 'hello'];
 
 if (
   !exists(['iam', 'service-accounts', 'describe', serviceAccount, '--project', projectId])
@@ -55,7 +62,7 @@ if (
   ]);
 }
 
-for (const fn of ['discordProxy', 'webProxy', 'oauthProxy']) {
+for (const fn of proxyFunctions) {
   run([
     'functions',
     'add-invoker-policy-binding',
@@ -67,6 +74,36 @@ for (const fn of ['discordProxy', 'webProxy', 'oauthProxy']) {
     projectId,
     '--member',
     `serviceAccount:${serviceAccount}`,
+  ]);
+}
+
+for (const fn of lockDownFunctions) {
+  runOptional([
+    'functions',
+    'remove-invoker-policy-binding',
+    fn,
+    '--gen2',
+    '--region',
+    region,
+    '--project',
+    projectId,
+    '--member',
+    'allUsers',
+  ]);
+
+  runOptional([
+    'run',
+    'services',
+    'remove-iam-policy-binding',
+    fn.toLowerCase(),
+    '--region',
+    region,
+    '--project',
+    projectId,
+    '--member',
+    'allUsers',
+    '--role',
+    'roles/run.invoker',
   ]);
 }
 

@@ -1,20 +1,27 @@
+const toNumber = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 // Firebase and API configuration
 export const config = {
-  // Firebase config (from Firebase Console)
   firebase: {
-    apiKey: 'AIzaSyDtV-y83u0o8xvp3ChbMsKSMeFrta8F0lI',
-    authDomain: 'serverless-felix-dev.firebaseapp.com',
-    projectId: 'serverless-felix-dev',
-    storageBucket: 'serverless-felix-dev.firebasestorage.app',
-    messagingSenderId: '1098968211229',
-    appId: '1:1098968211229:web:e418b9a850b112a9528bf4',
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? 'AIzaSyDtV-y83u0o8xvp3ChbMsKSMeFrta8F0lI',
+    authDomain:
+      import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? 'serverless-felix-dev.firebaseapp.com',
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? 'serverless-felix-dev',
+    storageBucket:
+      import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? 'serverless-felix-dev.firebasestorage.app',
+    messagingSenderId:
+      import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '1098968211229',
+    appId: import.meta.env.VITE_FIREBASE_APP_ID ?? '1:1098968211229:web:e418b9a850b112a9528bf4',
   },
 
-  // API Gateway URL
-  apiGateway: 'https://serverless-felix-dev-gateway-e0uxaqsd.ew.gateway.dev',
+  apiGateway:
+    import.meta.env.VITE_API_GATEWAY_URL ??
+    'https://serverless-felix-dev-gateway-e0uxaqsd.ew.gateway.dev',
 
-  // Canvas settings
-  chunkSize: 50,      // Pixels per chunk dimension
-  pixelSize: 10,      // Display size of each pixel
-  canvasSize: 500,    // Canvas element size in pixels
+  chunkSize: toNumber(import.meta.env.VITE_CANVAS_CHUNK_SIZE, 50),
+  pixelSize: toNumber(import.meta.env.VITE_CANVAS_PIXEL_SIZE, 10),
+  canvasSize: toNumber(import.meta.env.VITE_CANVAS_SIZE, 500),
 };

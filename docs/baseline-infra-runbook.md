@@ -125,6 +125,12 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 
+# Needed by workerOAuth to mint Firebase custom tokens
+gcloud iam service-accounts add-iam-policy-binding \
+  "worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
 # GCS bucket access for snapshots
 
 gcloud storage buckets add-iam-policy-binding "gs://$SNAPSHOT_BUCKET" \
@@ -147,6 +153,14 @@ for SECRET in \
   done
 ```
 
+Add versions:
+```bash
+echo -n "$DISCORD_PUBLIC_KEY" | gcloud secrets versions add discord_public_key --data-file=-
+echo -n "$DISCORD_CLIENT_ID" | gcloud secrets versions add discord_client_id --data-file=-
+echo -n "$DISCORD_CLIENT_SECRET" | gcloud secrets versions add discord_client_secret --data-file=-
+echo -n "$OAUTH_REDIRECT_URI" | gcloud secrets versions add oauth_redirect_uri --data-file=-
+```
+
 ## 8) Deploy API Gateway + functions
 ```bash
 npm run deploy:$ENV
@@ -163,10 +177,31 @@ for fn in discordProxy webProxy oauthProxy; do
     --gen2 \
     --region "$REGION" \
     --member "serviceAccount:$INVOKER_SA"
+
+  gcloud functions remove-invoker-policy-binding "$fn" \
+    --gen2 \
+    --region "$REGION" \
+    --member "allUsers" || true
+
+  gcloud run services remove-iam-policy-binding "${fn,,}" \
+    --region "$REGION" \
+    --member "allUsers" \
+    --role "roles/run.invoker" || true
   done
+
+gcloud functions remove-invoker-policy-binding hello \
+  --gen2 \
+  --region "$REGION" \
+  --member "allUsers" || true
+
+gcloud run services remove-iam-policy-binding hello \
+  --region "$REGION" \
+  --member "allUsers" \
+  --role "roles/run.invoker" || true
 ```
 
 Verify no public invoker:
 ```bash
 gcloud functions get-iam-policy discordProxy --gen2 --region "$REGION"
+gcloud run services get-iam-policy discordproxy --region "$REGION"
 ```

@@ -10,10 +10,11 @@ Goal: Implement the Discord command pipeline end-to-end using API Gateway -> pro
 - Admins can manage sessions (start/pause/reset) and take snapshots.
 
 ## Current state
-- `discordProxy` validates signature and enqueues a generic job.
-- `workerDiscord` only handles a `hello` command.
-- `workerDraw`/`workerSnapshot` are stubs.
-- Only `hello` command exists in registry.
+- `discordProxy` validates signature and enqueues typed jobs (`draw.requested`, `canvas.requested`, `session.command`, `snapshot.requested`).
+- `workerDiscord` handles `/canvas` follow-ups and `/session` state updates.
+- `workerDraw` enforces idempotency + rate limit and writes Firestore state.
+- `workerSnapshot` is still a stub (snapshot generation/upload not implemented yet).
+- Slash command registry includes draw/canvas/session/snapshot.
 
 ## Ordered implementation plan
 1. Define Discord commands (minimum)

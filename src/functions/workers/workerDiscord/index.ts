@@ -98,7 +98,22 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
   }
 
   const adminRoleId = process.env.DISCORD_ADMIN_ROLE_ID;
-  if (adminRoleId && !interaction.roles?.includes(adminRoleId)) {
+  if (!adminRoleId) {
+    console.error('workerDiscord DISCORD_ADMIN_ROLE_ID is not configured');
+    try {
+      await postDiscordFollowup(
+        interaction.applicationId,
+        interaction.token,
+        'Session commands are unavailable: admin role is not configured.',
+        64,
+      );
+    } catch (error) {
+      console.error('workerDiscord failed to send admin config error', error);
+    }
+    return;
+  }
+
+  if (!interaction.roles?.includes(adminRoleId)) {
     try {
       await postDiscordFollowup(
         interaction.applicationId,

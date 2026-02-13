@@ -3,19 +3,19 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Allow reading chunks and pixels for real-time canvas
     match /chunks/{chunkId}/pixels/{pixelId} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false; // Only backend workers can write
     }
     
     // Allow reading chunks collection
     match /chunks/{chunkId} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
     
     // Allow reading active area
     match /activeArea/{docId} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
     

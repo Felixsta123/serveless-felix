@@ -15,6 +15,41 @@ if (!environment || !(environment in projects)) {
 }
 
 const names = functionName ? [functionName] : Object.keys(functions);
+const projectId = projects[environment];
+
+const serviceAccounts = {
+  proxy: `proxy-sa@${projectId}.iam.gserviceaccount.com`,
+  worker: `worker-sa@${projectId}.iam.gserviceaccount.com`,
+};
+
+const resolveServiceAccount = (value) => {
+  if (!value) {
+    return null;
+  }
+  if (value.includes('@')) {
+    return value;
+  }
+  return serviceAccounts[value] ?? null;
+};
+
+const resolveEnvVars = (config) => {
+  const scoped = config.envByEnvironment?.[environment] ?? {};
+  const fromProcess = {};
+
+  for (const key of config.envFromProcess ?? []) {
+    const value = process.env[key];
+    if (value !== undefined && value !== '') {
+      fromProcess[key] = value;
+    }
+  }
+
+  return {
+    ...scoped,
+    ...fromProcess,
+  };
+};
+
+const encodeKvList = (entries) => entries.map(([key, value]) => `${key}=${value}`).join(',');
 
 for (const name of names) {
   if (!(name in functions)) {
@@ -37,18 +72,45 @@ for (const name of names) {
     '--entry-point',
     name,
     '--project',
-    projects[environment],
+    projectId,
   ];
 
   if (config.trigger === 'http') {
     args.push('--trigger-http');
     if (config.allowUnauthenticated) {
       args.push('--allow-unauthenticated');
+    } else {
+      args.push('--no-allow-unauthenticated');
     }
   }
 
   if (config.trigger === 'topic' && config.topic) {
     args.push('--trigger-topic', config.topic);
+  }
+
+  const serviceAccount = resolveServiceAccount(config.serviceAccount);
+  if (serviceAccount) {
+    args.push('--service-account', serviceAccount);
+  }
+
+  const envVars = resolveEnvVars(config);
+  const envEntries = Object.entries(envVars);
+  if (envEntries.length > 0) {
+    args.push('--set-env-vars', encodeKvList(envEntries));
+  }
+
+  const secretEntries = Object.entries(config.secrets ?? {}).map(([envName, secretName]) => [
+    envName,
+    `${secretName}:latest`,
+  ]);
+  if (secretEntries.length > 0) {
+    if (envEntries.length === 0) {
+      args.push(
+        '--remove-env-vars',
+        secretEntries.map(([envName]) => envName).join(','),
+      );
+    }
+    args.push('--set-secrets', encodeKvList(secretEntries));
   }
 
   const child = spawn('gcloud', args, { stdio: 'inherit' });
