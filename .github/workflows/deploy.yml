@@ -28,11 +28,12 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            all_functions:
+            shared_functions:
               - 'src/functions/shared/**'
               - 'src/index.ts'
               - 'scripts/deploy.mjs'
               - 'scripts/functions.mjs'
+            backend_dependencies:
               - 'package.json'
               - 'package-lock.json'
               - 'tsconfig.json'
@@ -52,7 +53,7 @@ jobs:
             worker_oauth:
               - 'src/functions/workers/workerOAuth/**'
             gateway:
-              - 'gateway/**'
+              - 'gateway/openapi.template.yaml'
               - 'scripts/deploy-gateway.mjs'
             monitoring:
               - 'monitoring/**'
@@ -65,9 +66,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          functions=()
+          BASE_SHA="${{ github.event.before }}"
+          HEAD_SHA="${{ github.sha }}"
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-parse "${HEAD_SHA}^" 2>/dev/null || echo "$HEAD_SHA")"
+          fi
 
-          if [[ "${{ steps.changes.outputs.all_functions }}" == "true" ]]; then
+          functions=()
+          force_all=false
+
+          if [[ "${{ steps.changes.outputs.shared_functions }}" == "true" ]]; then
+            force_all=true
+          fi
+
+          if [[ "${{ steps.changes.outputs.backend_dependencies }}" == "true" ]]; then
+            if git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- package-lock.json tsconfig.json .gcloudignore | grep -q .; then
+              force_all=true
+            fi
+
+            if [[ "$force_all" == "false" ]] && git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- package.json | grep -q .; then
+              package_affects_functions=$(BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" node scripts/ci/package-affects-functions.mjs)
+              if [[ "$package_affects_functions" == "true" ]]; then
+                force_all=true
+              fi
+            fi
+          fi
+
+          if [[ "$force_all" == "true" ]]; then
             functions=(discordProxy webProxy oauthProxy workerDraw workerSnapshot workerDiscord workerOAuth)
           else
             [[ "${{ steps.changes.outputs.discord_proxy }}" == "true" ]] && functions+=(discordProxy)
@@ -98,7 +123,7 @@ jobs:
           cache: 'npm'
 
       - name: Install backend dependencies
-        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true'
+        if: steps.plan.outputs.has_functions == 'true'
         run: npm ci
 
       - name: Authenticate to Google Cloud
