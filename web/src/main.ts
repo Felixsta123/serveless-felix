@@ -1,4 +1,5 @@
 import './style.css';
+import { config } from './config';
 import {
   getToken,
   getUser,
@@ -31,9 +32,15 @@ const updatedEl = document.getElementById('updated') as HTMLParagraphElement;
 const colorPicker = document.getElementById('color-picker') as HTMLInputElement;
 const drawBtn = document.getElementById('draw-btn') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLParagraphElement;
+const viewportEl = document.getElementById('viewport') as HTMLParagraphElement;
 const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
 
 let currentUser: User | null = null;
+
+const getInitialOffset = (min: number, max: number): number => {
+  const viewPixels = Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
+  return Math.round((min + max - (viewPixels - 1)) / 2);
+};
 
 // Update UI based on auth state
 const updateAuthUI = (user: User | null): void => {
@@ -84,6 +91,11 @@ const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
 const setStatus = (msg: string, type: 'info' | 'error' | 'success' = 'info'): void => {
   statusEl.textContent = msg;
   statusEl.className = type === 'info' ? '' : type;
+};
+
+const updateViewportInfo = (): void => {
+  const { offsetX, offsetY } = getState();
+  viewportEl.textContent = `View origin: (${offsetX}, ${offsetY})`;
 };
 
 // Handle draw button click
@@ -165,9 +177,9 @@ const init = async (): Promise<void> => {
     // Get active area and center view
     try {
       const area = await getActiveArea();
-      const centerX = Math.floor((area.minX + area.maxX) / 2) - 25;
-      const centerY = Math.floor((area.minY + area.maxY) / 2) - 25;
-      setOffset(Math.max(0, centerX), Math.max(0, centerY));
+      const offsetX = getInitialOffset(area.minX, area.maxX);
+      const offsetY = getInitialOffset(area.minY, area.maxY);
+      setOffset(offsetX, offsetY);
       setStatus('Connected', 'success');
     } catch {
       setOffset(0, 0);
@@ -200,6 +212,12 @@ const init = async (): Promise<void> => {
       updatePixelInfo(selected.x, selected.y, pixel);
     }
   });
+
+  window.addEventListener('viewportChanged', () => {
+    updateViewportInfo();
+  });
+
+  updateViewportInfo();
 
   window.addEventListener('canvasError', ((e: CustomEvent) => {
     setStatus(`Canvas error: ${e.detail.error}`, 'error');

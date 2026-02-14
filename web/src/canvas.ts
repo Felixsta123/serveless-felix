@@ -22,8 +22,17 @@ let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let pollTimer: number | null = null;
 let inFlight = false;
+let isPanning = false;
+let dragMoved = false;
+let suppressClick = false;
+let panStartMouseX = 0;
+let panStartMouseY = 0;
+let panStartOffsetX = 0;
+let panStartOffsetY = 0;
 
 const POLL_INTERVAL_MS = 1000;
+const DRAG_THRESHOLD_PX = 3;
+const KEY_PAN_STEP = 5;
 
 const key = (x: number, y: number) => `${x}_${y}`;
 
@@ -37,7 +46,7 @@ const applyRoundId = (nextRoundId: string | null): boolean => {
 };
 
 const getViewSize = (): number => {
-  return config.canvasSize / config.pixelSize;
+  return Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
 };
 
 const refreshVisible = async (): Promise<void> => {
@@ -84,20 +93,32 @@ export const initCanvas = (el: HTMLCanvasElement): void => {
   ctx = canvas.getContext('2d');
   canvas.width = config.canvasSize;
   canvas.height = config.canvasSize;
+  canvas.tabIndex = 0;
   canvas.addEventListener('click', handleClick);
+  canvas.addEventListener('mousedown', handleMouseDown);
+  canvas.addEventListener('wheel', handleWheel, { passive: false });
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+  canvas.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('mousemove', handleMouseMove);
+  window.addEventListener('mouseup', handleMouseUp);
   render();
 };
 
 export const getState = () => state;
 
 export const setOffset = (x: number, y: number, resubscribe = true): void => {
-  state.offsetX = x;
-  state.offsetY = y;
+  state.offsetX = Math.round(x);
+  state.offsetY = Math.round(y);
   if (resubscribe) {
     ensurePolling();
     void refreshVisible();
   }
   render();
+  window.dispatchEvent(
+    new CustomEvent('viewportChanged', {
+      detail: { offsetX: state.offsetX, offsetY: state.offsetY },
+    }),
+  );
 };
 
 export const getPixelAt = (x: number, y: number): Pixel | null => {
@@ -117,6 +138,10 @@ export const getActiveArea = async (): Promise<{
 };
 
 const handleClick = (e: MouseEvent): void => {
+  if (suppressClick) {
+    suppressClick = false;
+    return;
+  }
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -137,6 +162,87 @@ const handleClick = (e: MouseEvent): void => {
     })
   );
   render();
+};
+
+const handleMouseDown = (event: MouseEvent): void => {
+  if (!canvas) {
+    return;
+  }
+  if (event.button !== 1 && !(event.button === 0 && event.shiftKey)) {
+    return;
+  }
+  event.preventDefault();
+  isPanning = true;
+  dragMoved = false;
+  panStartMouseX = event.clientX;
+  panStartMouseY = event.clientY;
+  panStartOffsetX = state.offsetX;
+  panStartOffsetY = state.offsetY;
+  canvas.style.cursor = 'grabbing';
+};
+
+const handleMouseMove = (event: MouseEvent): void => {
+  if (!isPanning) {
+    return;
+  }
+  const dx = event.clientX - panStartMouseX;
+  const dy = event.clientY - panStartMouseY;
+  if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) {
+    dragMoved = true;
+  }
+
+  const worldDx = Math.round(dx / config.pixelSize);
+  const worldDy = Math.round(dy / config.pixelSize);
+  setOffset(panStartOffsetX - worldDx, panStartOffsetY - worldDy);
+};
+
+const handleMouseUp = (): void => {
+  if (!isPanning) {
+    return;
+  }
+  isPanning = false;
+  if (canvas) {
+    canvas.style.cursor = 'crosshair';
+  }
+  if (dragMoved) {
+    suppressClick = true;
+  }
+};
+
+const handleWheel = (event: WheelEvent): void => {
+  if (!canvas) {
+    return;
+  }
+  event.preventDefault();
+  const worldDx = Math.round(event.deltaX / config.pixelSize);
+  const worldDy = Math.round(event.deltaY / config.pixelSize);
+  if (worldDx === 0 && worldDy === 0) {
+    return;
+  }
+  setOffset(state.offsetX + worldDx, state.offsetY + worldDy);
+};
+
+const handleKeyDown = (event: KeyboardEvent): void => {
+  let dx = 0;
+  let dy = 0;
+  switch (event.key) {
+    case 'ArrowLeft':
+      dx = -KEY_PAN_STEP;
+      break;
+    case 'ArrowRight':
+      dx = KEY_PAN_STEP;
+      break;
+    case 'ArrowUp':
+      dy = -KEY_PAN_STEP;
+      break;
+    case 'ArrowDown':
+      dy = KEY_PAN_STEP;
+      break;
+    default:
+      return;
+  }
+  event.preventDefault();
+  setOffset(state.offsetX + dx, state.offsetY + dy);
 };
 
 const render = (): void => {
@@ -190,4 +296,12 @@ export const unsubscribeAll = (): void => {
     window.clearInterval(pollTimer);
     pollTimer = null;
   }
+  if (canvas) {
+    canvas.removeEventListener('click', handleClick);
+    canvas.removeEventListener('mousedown', handleMouseDown);
+    canvas.removeEventListener('wheel', handleWheel);
+    canvas.removeEventListener('keydown', handleKeyDown);
+  }
+  window.removeEventListener('mousemove', handleMouseMove);
+  window.removeEventListener('mouseup', handleMouseUp);
 };

@@ -142,6 +142,13 @@ main {
   font-size: 0.85rem;
 }
 
+#viewport,
+#nav-help {
+  font-size: 0.8rem;
+  color: #8f9bb3;
+  margin-top: 0.35rem;
+}
+
 #status.error {
   color: #e94560;
 }
