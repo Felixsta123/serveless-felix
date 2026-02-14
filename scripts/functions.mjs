@@ -1,35 +1,22 @@
-const requiredByEnvironment = {
-  dev: [
-    'DEV_WEB_APP_URL',
-    'DEV_DISCORD_ADMIN_ROLE_ID',
-    'DEV_SNAPSHOT_BUCKET',
-  ],
-  prd: [
-    'PRD_WEB_APP_URL',
-    'PRD_DISCORD_ADMIN_ROLE_ID',
-    'PRD_SNAPSHOT_BUCKET',
-  ],
+const configByEnvironment = {
+  dev: {
+    WEB_APP_URL: 'https://serverless-felix-dev.web.app',
+    DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
+    SNAPSHOT_BUCKET: 'serverless-felix-dev-snapshots',
+  },
+  prd: {
+    WEB_APP_URL: 'https://serverless-felix-prd.web.app',
+    DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
+    SNAPSHOT_BUCKET: 'serverless-felix-prd-snapshots',
+  },
 };
 
 const readEnvironmentValues = (environment) => {
-  const required = requiredByEnvironment[environment] ?? [];
-  const missing = required.filter((key) => {
-    const value = process.env[key];
-    return value === undefined || value === '';
-  });
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required env for ${environment}: ${missing.join(', ')}`,
-    );
+  const values = configByEnvironment[environment];
+  if (!values) {
+    throw new Error(`Unknown environment: ${environment}`);
   }
-
-  const prefix = environment.toUpperCase();
-  return {
-    WEB_APP_URL: process.env[`${prefix}_WEB_APP_URL`],
-    DISCORD_ADMIN_ROLE_ID: process.env[`${prefix}_DISCORD_ADMIN_ROLE_ID`],
-    SNAPSHOT_BUCKET: process.env[`${prefix}_SNAPSHOT_BUCKET`],
-  };
+  return values;
 };
 
 export const getEnvironmentValues = (environment) => readEnvironmentValues(environment);
