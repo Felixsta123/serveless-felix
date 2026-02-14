@@ -8,11 +8,18 @@ import {
   logWarn,
   type RequestContext,
 } from '../../shared/observability.js';
+import {
+  isHexState,
+  normalizeHexColor,
+  parseIntStrict,
+  parsePositiveInt,
+} from '../../shared/validation.js';
+import { toChunkRange } from '../../shared/canvasMath.js';
 
 const firestore = new Firestore();
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
-const STATE_PATTERN = /^[a-f0-9]{32}$/i;
 const CHUNK_SIZE = Number(process.env.CANVAS_CHUNK_SIZE ?? 50);
+const SESSION_COOKIE_NAME = 'session_token';
 
 type SessionData = {
   discordUserId: string;
@@ -35,19 +42,49 @@ type PixelRecord = {
 };
 
 const setCorsHeaders = (res: Parameters<HttpFunction>[1]) => {
-  if (WEB_APP_URL) {
-    res.set('Access-Control-Allow-Origin', WEB_APP_URL);
-  }
+  res.set('Access-Control-Allow-Origin', WEB_APP_URL);
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Session-Token');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
   res.set('Access-Control-Allow-Credentials', 'true');
 };
 
+const parseCookies = (cookieHeader: string | undefined): Record<string, string> => {
+  if (!cookieHeader) {
+    return {};
+  }
+  const cookies: Record<string, string> = {};
+  for (const part of cookieHeader.split(';')) {
+    const trimmed = part.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (!key || !value) {
+      continue;
+    }
+    cookies[key] = decodeURIComponent(value);
+  }
+  return cookies;
+};
+
+const sessionCookie = (token: string, maxAgeSeconds: number): string =>
+  `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+
+const clearSessionCookie = (): string =>
+  `${SESSION_COOKIE_NAME}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+
 const validateSession = async (
-  sessionToken: string | undefined,
+  req: Parameters<HttpFunction>[0],
   requestContext: RequestContext,
   path: string,
 ): Promise<SessionData | null> => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionToken = cookies[SESSION_COOKIE_NAME];
   if (!sessionToken) {
     logWarn('web_proxy_session_token_missing', {
       ...requestContext,
@@ -64,7 +101,6 @@ const validateSession = async (
     return null;
   }
 
-  // Find session by token
   const sessionsRef = firestore.collection('sessions');
   const query = sessionsRef.where('token', '==', token).limit(1);
   const snapshot = await query.get();
@@ -90,7 +126,6 @@ const validateSession = async (
     return null;
   }
 
-  // Check expiration
   if (!data.expiresAt || data.expiresAt.toDate() < new Date()) {
     logWarn('web_proxy_session_expired', {
       ...requestContext,
@@ -103,63 +138,11 @@ const validateSession = async (
   return data;
 };
 
-const parseIntParam = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isInteger(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed)) {
-      return parsed;
-    }
-  }
-  return null;
-};
-
-const normalizeColor = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const trimmed = value.trim().toLowerCase();
-  if (!/^#?[0-9a-f]{6}$/.test(trimmed)) {
-    return null;
-  }
-  return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-};
-
-const parsePositiveInt = (value: unknown): number | null => {
-  const parsed = parseIntParam(value);
-  if (parsed === null || parsed < 1) {
-    return null;
-  }
-  return parsed;
-};
-
 const toTimestampIso = (value: unknown): string | null => {
   if (value instanceof Timestamp) {
     return value.toDate().toISOString();
   }
   return null;
-};
-
-const toChunkRange = (
-  minX: number,
-  minY: number,
-  maxX: number,
-  maxY: number,
-): Array<{ chunkX: number; chunkY: number; chunkId: string }> => {
-  const startChunkX = Math.floor(minX / CHUNK_SIZE);
-  const startChunkY = Math.floor(minY / CHUNK_SIZE);
-  const endChunkX = Math.floor(maxX / CHUNK_SIZE);
-  const endChunkY = Math.floor(maxY / CHUNK_SIZE);
-
-  const chunks: Array<{ chunkX: number; chunkY: number; chunkId: string }> = [];
-  for (let chunkX = startChunkX; chunkX <= endChunkX; chunkX++) {
-    for (let chunkY = startChunkY; chunkY <= endChunkY; chunkY++) {
-      chunks.push({ chunkX, chunkY, chunkId: `${chunkX}_${chunkY}` });
-    }
-  }
-  return chunks;
 };
 
 export const webProxy: HttpFunction = async (req, res) => {
@@ -186,16 +169,20 @@ export const webProxy: HttpFunction = async (req, res) => {
     return;
   }
 
-  // Normalize path - handle both /session and /web/session formats
   let path = req.path || '/';
   if (path.startsWith('/web/')) {
-    path = path.slice(4); // Remove /web prefix
+    path = path.slice(4);
   }
   if (!path.startsWith('/')) {
     path = '/' + path;
   }
 
-  // GET /session?state=xxx - Poll for session status (used after OAuth callback)
+  if (req.method === 'POST' && path === '/logout') {
+    res.set('Set-Cookie', clearSessionCookie());
+    res.status(204).send('');
+    return;
+  }
+
   if (req.method === 'GET' && path === '/session') {
     const state = req.query.state as string | undefined;
     if (!state) {
@@ -206,7 +193,7 @@ export const webProxy: HttpFunction = async (req, res) => {
       res.status(400).json({ error: 'Missing state parameter' });
       return;
     }
-    if (!STATE_PATTERN.test(state)) {
+    if (!isHexState(state)) {
       logWarn('web_proxy_session_invalid_state', {
         ...requestContext,
         path,
@@ -253,6 +240,24 @@ export const webProxy: HttpFunction = async (req, res) => {
         res.status(500).json({ status: 'error', error: 'Session is missing API token' });
         return;
       }
+
+      const maxAgeSeconds = Math.max(
+        0,
+        Math.floor((data.expiresAt.toDate().getTime() - Date.now()) / 1000),
+      );
+      if (maxAgeSeconds <= 0) {
+        logWarn('web_proxy_session_expired', {
+          ...requestContext,
+          path,
+          state,
+          userId: data.discordUserId,
+        });
+        res.set('Set-Cookie', clearSessionCookie());
+        res.status(401).json({ status: 'error', error: 'Session expired' });
+        return;
+      }
+      res.set('Set-Cookie', sessionCookie(data.token, maxAgeSeconds));
+
       logInfo('web_proxy_session_ready', {
         ...requestContext,
         path,
@@ -261,7 +266,6 @@ export const webProxy: HttpFunction = async (req, res) => {
       });
       res.status(200).json({
         status: 'ready',
-        apiToken: data.token,
         user: {
           id: data.discordUserId,
           username: data.discordUsername,
@@ -275,13 +279,8 @@ export const webProxy: HttpFunction = async (req, res) => {
     return;
   }
 
-  // POST /draw - Draw a pixel (authenticated)
   if (req.method === 'POST' && path === '/draw') {
-    const session = await validateSession(
-      req.headers['x-session-token'] as string | undefined,
-      requestContext,
-      path,
-    );
+    const session = await validateSession(req, requestContext, path);
     if (!session) {
       logWarn('web_proxy_draw_unauthorized', {
         ...requestContext,
@@ -291,8 +290,8 @@ export const webProxy: HttpFunction = async (req, res) => {
       return;
     }
 
-    const body = req.body as Record<string, unknown> | undefined;
-    if (!body) {
+    const body = req.body;
+    if (!body || typeof body !== 'object') {
       logWarn('web_proxy_draw_missing_body', {
         ...requestContext,
         path,
@@ -302,9 +301,10 @@ export const webProxy: HttpFunction = async (req, res) => {
       return;
     }
 
-    const x = parseIntParam(body.x);
-    const y = parseIntParam(body.y);
-    const color = normalizeColor(body.color);
+    const typedBody = body as Record<string, unknown>;
+    const x = parseIntStrict(typedBody.x);
+    const y = parseIntStrict(typedBody.y);
+    const color = normalizeHexColor(typedBody.color);
 
     if (x === null || y === null || !color) {
       logWarn('web_proxy_draw_invalid_params', {
@@ -354,13 +354,8 @@ export const webProxy: HttpFunction = async (req, res) => {
     return;
   }
 
-  // GET /active-area - Active canvas bounds (authenticated)
   if (req.method === 'GET' && path === '/active-area') {
-    const session = await validateSession(
-      req.headers['x-session-token'] as string | undefined,
-      requestContext,
-      path,
-    );
+    const session = await validateSession(req, requestContext, path);
     if (!session) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
@@ -374,10 +369,10 @@ export const webProxy: HttpFunction = async (req, res) => {
       }
       const data = snap.data() as Record<string, unknown>;
       res.status(200).json({
-        minX: parseIntParam(data.minX) ?? 0,
-        minY: parseIntParam(data.minY) ?? 0,
-        maxX: parseIntParam(data.maxX) ?? 0,
-        maxY: parseIntParam(data.maxY) ?? 0,
+        minX: parseIntStrict(data.minX) ?? 0,
+        minY: parseIntStrict(data.minY) ?? 0,
+        maxX: parseIntStrict(data.maxX) ?? 0,
+        maxY: parseIntStrict(data.maxY) ?? 0,
         roundId: typeof data.roundId === 'string' ? data.roundId : null,
       });
       return;
@@ -392,20 +387,15 @@ export const webProxy: HttpFunction = async (req, res) => {
     }
   }
 
-  // GET /canvas - Read visible canvas window (authenticated)
   if (req.method === 'GET' && path === '/canvas') {
-    const session = await validateSession(
-      req.headers['x-session-token'] as string | undefined,
-      requestContext,
-      path,
-    );
+    const session = await validateSession(req, requestContext, path);
     if (!session) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
-    const offsetX = parseIntParam(req.query.offsetX);
-    const offsetY = parseIntParam(req.query.offsetY);
+    const offsetX = parseIntStrict(req.query.offsetX);
+    const offsetY = parseIntStrict(req.query.offsetY);
     const size = parsePositiveInt(req.query.size);
 
     if (offsetX === null || offsetY === null || size === null || size > 500) {
@@ -425,7 +415,7 @@ export const webProxy: HttpFunction = async (req, res) => {
       const activeData = (activeSnap.data() as Record<string, unknown> | undefined) ?? {};
       const roundId = typeof activeData.roundId === 'string' ? activeData.roundId : null;
 
-      const chunks = toChunkRange(minX, minY, maxX, maxY);
+      const chunks = toChunkRange(minX, minY, maxX, maxY, CHUNK_SIZE);
       const chunkSnapshots = await Promise.all(
         chunks.map(({ chunkId }) => {
           const col = firestore.collection(`chunks/${chunkId}/pixels`);
@@ -437,8 +427,8 @@ export const webProxy: HttpFunction = async (req, res) => {
       for (const chunkSnap of chunkSnapshots) {
         for (const doc of chunkSnap.docs) {
           const data = doc.data() as Record<string, unknown>;
-          const x = parseIntParam(data.x);
-          const y = parseIntParam(data.y);
+          const x = parseIntStrict(data.x);
+          const y = parseIntStrict(data.y);
           if (x === null || y === null) {
             continue;
           }
@@ -464,10 +454,10 @@ export const webProxy: HttpFunction = async (req, res) => {
         roundId,
         window: { minX, minY, maxX, maxY, size },
         activeArea: {
-          minX: parseIntParam(activeData.minX) ?? 0,
-          minY: parseIntParam(activeData.minY) ?? 0,
-          maxX: parseIntParam(activeData.maxX) ?? 0,
-          maxY: parseIntParam(activeData.maxY) ?? 0,
+          minX: parseIntStrict(activeData.minX) ?? 0,
+          minY: parseIntStrict(activeData.minY) ?? 0,
+          maxX: parseIntStrict(activeData.maxX) ?? 0,
+          maxY: parseIntStrict(activeData.maxY) ?? 0,
         },
         pixels: Array.from(dedup.values()),
       });
@@ -486,7 +476,6 @@ export const webProxy: HttpFunction = async (req, res) => {
     }
   }
 
-  // Default: 404
   logWarn('web_proxy_not_found', {
     ...requestContext,
     path,

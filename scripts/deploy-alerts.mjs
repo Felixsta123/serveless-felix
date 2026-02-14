@@ -1,21 +1,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { resolveProjectId } from './lib/projects.mjs';
+import { runCapture, runInherit } from './lib/gcloud.mjs';
 
 const [, , environment] = process.argv;
 
-const projects = {
-  dev: 'serverless-felix-dev',
-  prd: 'serverless-felix-prd',
-};
-
-if (!environment || !(environment in projects)) {
-  console.error('Usage: node scripts/deploy-alerts.mjs <dev|prd>');
-  process.exit(1);
-}
-
-const projectId = projects[environment];
+const projectId = resolveProjectId(
+  environment,
+  'Usage: node scripts/deploy-alerts.mjs <dev|prd>',
+);
 const templatePath = path.resolve('monitoring', 'alert-policies.core.template.json');
 const renderedPath = path.resolve('monitoring', `alert-policies.${environment}.json`);
 
@@ -23,27 +17,6 @@ if (!fs.existsSync(templatePath)) {
   console.error(`Alert policy template not found: ${templatePath}`);
   process.exit(1);
 }
-
-const runCapture = (args) => {
-  const result = spawnSync('gcloud', args, { encoding: 'utf8' });
-  if (result.status !== 0) {
-    if (result.stdout) {
-      process.stdout.write(result.stdout);
-    }
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-    }
-    process.exit(result.status ?? 1);
-  }
-  return (result.stdout ?? '').trim();
-};
-
-const runInherit = (args) => {
-  const result = spawnSync('gcloud', args, { stdio: 'inherit' });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-};
 
 const renderPolicies = () => {
   const template = fs.readFileSync(templatePath, 'utf8');

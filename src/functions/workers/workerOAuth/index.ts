@@ -4,13 +4,12 @@ import https from 'node:https';
 import crypto from 'node:crypto';
 import admin from 'firebase-admin';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
-import { JobPayload } from '../../shared/queue.js';
 import {
   getWorkerContext,
   logError,
   logInfo,
-  logWarn,
 } from '../../shared/observability.js';
+import { parseJob } from '../../shared/pubsubJob.js';
 
 const firestore = new Firestore();
 
@@ -51,7 +50,7 @@ const httpRequest = <T>(options: https.RequestOptions, body?: string): Promise<T
         if (status >= 200 && status < 300) {
           try {
             resolve(JSON.parse(data) as T);
-          } catch (e) {
+          } catch {
             reject(new Error(`Failed to parse response: ${data}`));
           }
         } else {
@@ -105,62 +104,12 @@ const fetchDiscordUser = async (accessToken: string): Promise<DiscordUser> => {
 
 const generateSessionToken = (): string => crypto.randomBytes(32).toString('hex');
 
-const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
-  const data = event.data;
-  if (!data) {
-    return null;
-  }
-  if (typeof data === 'string') {
-    return data;
-  }
-  if (Buffer.isBuffer(data)) {
-    return data.toString('utf8');
-  }
-  const messageData = (data as { message?: { data?: unknown } }).message?.data;
-  if (typeof messageData === 'string') {
-    return messageData;
-  }
-  if (Buffer.isBuffer(messageData)) {
-    return messageData.toString('utf8');
-  }
-  const legacyData = (data as { data?: unknown }).data;
-  if (typeof legacyData === 'string') {
-    return legacyData;
-  }
-  if (Buffer.isBuffer(legacyData)) {
-    return legacyData.toString('utf8');
-  }
-  return null;
-};
-
-const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
-  const raw = extractMessageData(event);
-  if (!raw) {
-    logWarn('worker_oauth_missing_message_data', {
-      eventId: event.id ?? null,
-      dataType: typeof event.data,
-      hasMessage: Boolean(event.data?.message),
-    });
-    return null;
-  }
-  try {
-    const decoded = Buffer.from(raw, 'base64').toString('utf8');
-    return JSON.parse(decoded) as JobPayload;
-  } catch (error) {
-    try {
-      return JSON.parse(raw) as JobPayload;
-    } catch (fallbackError) {
-      logError('worker_oauth_parse_failed', fallbackError, {
-        eventId: event.id ?? null,
-        primaryError: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-  }
-};
-
 export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
-  const job = parseJob(event);
+  const job = parseJob(
+    event,
+    'worker_oauth_parse_failed',
+    'worker_oauth_missing_message_data',
+  );
   if (!job || job.kind !== 'oauth.exchange') {
     return;
   }
@@ -180,14 +129,12 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
   const { code, state, redirectUri } = job;
 
   try {
-    // Exchange code for access token
     const tokenResponse = await exchangeCodeForToken(code, redirectUri);
     logInfo('worker_oauth_token_exchanged', {
       ...context,
       oauthState: state,
     });
 
-    // Fetch user info
     const user = await fetchDiscordUser(tokenResponse.access_token);
     logInfo('worker_oauth_user_fetched', {
       ...context,
@@ -195,12 +142,10 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
       userId: user.id,
     });
 
-    // Mint Firebase custom token used by the SPA for authenticated Firestore reads
     const firebaseCustomToken = await adminAuth().createCustomToken(user.id, {
       discordUsername: user.global_name ?? user.username,
     });
 
-    // Create session in Firestore
     const sessionToken = generateSessionToken();
     const now = Timestamp.now();
     const expiresAt = Timestamp.fromDate(
@@ -231,7 +176,6 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
       oauthState: state,
     });
 
-    // Store error state so web app can show error
     const sessionRef = firestore.doc(`sessions/${state}`);
     try {
       await sessionRef.set({

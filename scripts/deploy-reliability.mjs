@@ -1,46 +1,16 @@
-import { spawnSync } from 'node:child_process';
+import { resolveProjectId } from './lib/projects.mjs';
+import { runCapture, runInherit, runResult } from './lib/gcloud.mjs';
 
 const [, , environment] = process.argv;
 const region = 'europe-west1';
 
-const projects = {
-  dev: 'serverless-felix-dev',
-  prd: 'serverless-felix-prd',
-};
-
-if (!environment || !(environment in projects)) {
-  console.error('Usage: node scripts/deploy-reliability.mjs <dev|prd>');
-  process.exit(1);
-}
-
-const projectId = projects[environment];
+const projectId = resolveProjectId(
+  environment,
+  'Usage: node scripts/deploy-reliability.mjs <dev|prd>',
+);
 const workers = ['workerdraw', 'workerdiscord', 'workeroauth', 'workersnapshot'];
 const dlqTopic = 'jobs-dlq';
 const dlqSubscription = 'jobs-dlq-sub';
-
-const runResult = (args) =>
-  spawnSync('gcloud', args, { encoding: 'utf8' });
-
-const runCapture = (args) => {
-  const result = runResult(args);
-  if (result.status !== 0) {
-    if (result.stdout) {
-      process.stdout.write(result.stdout);
-    }
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-    }
-    process.exit(result.status ?? 1);
-  }
-  return (result.stdout ?? '').trim();
-};
-
-const runInherit = (args) => {
-  const result = spawnSync('gcloud', args, { stdio: 'inherit' });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-};
 
 const ensureTopic = (topicId) => {
   const describe = runResult([

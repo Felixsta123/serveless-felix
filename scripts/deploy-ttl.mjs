@@ -1,45 +1,18 @@
-import { spawnSync } from 'node:child_process';
+import { resolveProjectId } from './lib/projects.mjs';
+import { runCapture, runInherit } from './lib/gcloud.mjs';
 
 const [, , environment] = process.argv;
 
-const projects = {
-  dev: 'serverless-felix-dev',
-  prd: 'serverless-felix-prd',
-};
-
-if (!environment || !(environment in projects)) {
-  console.error('Usage: node scripts/deploy-ttl.mjs <dev|prd>');
-  process.exit(1);
-}
-
-const projectId = projects[environment];
+const projectId = resolveProjectId(
+  environment,
+  'Usage: node scripts/deploy-ttl.mjs <dev|prd>',
+);
 const database = '(default)';
 
 const ttlTargets = [
   { collectionGroup: 'sessions', field: 'expiresAt' },
   { collectionGroup: 'idempotency', field: 'createdAt' },
 ];
-
-const runCapture = (args) => {
-  const result = spawnSync('gcloud', args, { encoding: 'utf8' });
-  if (result.status !== 0) {
-    if (result.stdout) {
-      process.stdout.write(result.stdout);
-    }
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-    }
-    process.exit(result.status ?? 1);
-  }
-  return (result.stdout ?? '').trim();
-};
-
-const runInherit = (args) => {
-  const result = spawnSync('gcloud', args, { stdio: 'inherit' });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-};
 
 for (const target of ttlTargets) {
   console.log(

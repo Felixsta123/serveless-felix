@@ -290,10 +290,6 @@ const render = (): void => {
   }
 };
 
-export const subscribeVisible = (): void => {
-  ensurePolling();
-};
-
 export const unsubscribeAll = (): void => {
   if (pollTimer !== null) {
     window.clearInterval(pollTimer);

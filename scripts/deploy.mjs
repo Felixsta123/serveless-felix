@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { functions } from './functions.mjs';
+import { functions, getEnvironmentValues } from './functions.mjs';
+import { resolveProjectId } from './lib/projects.mjs';
 
 const [, , environment, functionName] = process.argv;
 const region = 'europe-west1';
@@ -7,18 +8,21 @@ const MAX_DEPLOY_ATTEMPTS = Number(process.env.DEPLOY_MAX_ATTEMPTS ?? 5);
 const BASE_RETRY_DELAY_MS = Number(process.env.DEPLOY_RETRY_DELAY_MS ?? 15000);
 const RETRIABLE_DEPLOY_ERROR = /unable to queue the operation|status=\[409\]/i;
 
-const projects = {
-  dev: 'serverless-felix-dev',
-  prd: 'serverless-felix-prd',
-};
+const projectId = resolveProjectId(
+  environment,
+  'Usage: node scripts/deploy.mjs <dev|prd> [functionName]',
+);
 
-if (!environment || !(environment in projects)) {
-  console.error('Usage: node scripts/deploy.mjs <dev|prd> [functionName]');
-  process.exit(1);
-}
+const environmentValues = (() => {
+  try {
+    return getEnvironmentValues(environment);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+})();
 
 const names = functionName ? [functionName] : Object.keys(functions);
-const projectId = projects[environment];
 
 const serviceAccounts = {
   proxy: `proxy-sa@${projectId}.iam.gserviceaccount.com`,
@@ -36,9 +40,15 @@ const resolveServiceAccount = (value) => {
 };
 
 const resolveEnvVars = (config) => {
-  const scoped = config.envByEnvironment?.[environment] ?? {};
-  const fromProcess = {};
+  const fromEnvironmentConfig = {};
+  for (const key of config.envByEnvironmentFromConfig ?? []) {
+    const value = environmentValues[key];
+    if (value !== undefined && value !== '') {
+      fromEnvironmentConfig[key] = value;
+    }
+  }
 
+  const fromProcess = {};
   for (const key of config.envFromProcess ?? []) {
     const value = process.env[key];
     if (value !== undefined && value !== '') {
@@ -47,7 +57,7 @@ const resolveEnvVars = (config) => {
   }
 
   return {
-    ...scoped,
+    ...fromEnvironmentConfig,
     ...fromProcess,
   };
 };

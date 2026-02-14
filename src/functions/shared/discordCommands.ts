@@ -1,8 +1,14 @@
 import type { DiscordInteraction } from './discord.js';
+import type { JobPayload } from './queue.js';
+
+type DiscordCommandJobType = Extract<
+  JobPayload['kind'],
+  'draw.requested' | 'canvas.requested' | 'session.command' | 'snapshot.requested'
+>;
 
 export type DiscordCommandRoute = {
   name: string;
-  jobType: string;
+  jobType: DiscordCommandJobType;
 };
 
 const COMMAND_ROUTES = new Map<string, DiscordCommandRoute>([
@@ -21,5 +27,3 @@ export const resolveDiscordCommand = (
   }
   return COMMAND_ROUTES.get(name) ?? null;
 };
-
-export const listDiscordCommands = (): string[] => Array.from(COMMAND_ROUTES.keys());

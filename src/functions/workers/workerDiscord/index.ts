@@ -2,7 +2,6 @@ import { CloudEvent } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import crypto from 'node:crypto';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
-import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
 import {
   getWorkerContext,
@@ -10,69 +9,20 @@ import {
   logInfo,
   logWarn,
 } from '../../shared/observability.js';
+import { parseJob } from '../../shared/pubsubJob.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
 const activeAreaRef = firestore.doc('activeArea/current');
-const WEB_APP_URL = process.env.WEB_APP_URL ?? 'https://your-app.web.app';
+const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
 const makeRoundId = (): string => `round-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
-const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
-  const data = event.data;
-  if (!data) {
-    return null;
-  }
-  if (typeof data === 'string') {
-    return data;
-  }
-  if (Buffer.isBuffer(data)) {
-    return data.toString('utf8');
-  }
-  const messageData = (data as { message?: { data?: unknown } }).message?.data;
-  if (typeof messageData === 'string') {
-    return messageData;
-  }
-  if (Buffer.isBuffer(messageData)) {
-    return messageData.toString('utf8');
-  }
-  const legacyData = (data as { data?: unknown }).data;
-  if (typeof legacyData === 'string') {
-    return legacyData;
-  }
-  if (Buffer.isBuffer(legacyData)) {
-    return legacyData.toString('utf8');
-  }
-  return null;
-};
-
-const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
-  const raw = extractMessageData(event);
-  if (!raw) {
-    logWarn('worker_discord_missing_message_data', {
-      eventId: event.id ?? null,
-      dataType: typeof event.data,
-      hasMessage: Boolean(event.data?.message),
-    });
-    return null;
-  }
-  try {
-    const decoded = Buffer.from(raw, 'base64').toString('utf8');
-    return JSON.parse(decoded) as JobPayload;
-  } catch (error) {
-    try {
-      return JSON.parse(raw) as JobPayload;
-    } catch (fallbackError) {
-      logError('worker_discord_parse_failed', fallbackError, {
-        eventId: event.id ?? null,
-        primaryError: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-  }
-};
-
 export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
-  const job = parseJob(event);
+  const job = parseJob(
+    event,
+    'worker_discord_parse_failed',
+    'worker_discord_missing_message_data',
+  );
   if (!job) {
     logWarn('worker_discord_ignored_invalid_payload', {
       eventId: event.id ?? null,
@@ -110,10 +60,13 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
 
   if (job.kind === 'canvas.requested') {
     try {
+      const content = WEB_APP_URL
+        ? `🎨 **Pixel Canvas est en ligne !**\n\n🔗 ${WEB_APP_URL}\n\nConnectez-vous avec Discord pour dessiner des pixels !`
+        : '🎨 **Pixel Canvas est en ligne !**\n\nConnectez-vous avec Discord pour dessiner des pixels !';
       await postDiscordFollowup(
         interaction.applicationId,
         interaction.token,
-        `🎨 **Pixel Canvas est en ligne !**\n\n🔗 ${WEB_APP_URL}\n\nConnectez-vous avec Discord pour dessiner des pixels !`,
+        content,
       );
       logInfo('worker_discord_canvas_followup_sent', {
         ...context,
@@ -199,7 +152,6 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
           },
           { merge: true },
         );
-        // Overwrite current active bounds so the next draw starts a fresh round area.
         tx.set(activeAreaRef, {
           roundId: newRoundId,
           updatedAt: now,

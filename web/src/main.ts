@@ -1,16 +1,7 @@
 import './style.css';
 import { config } from './config';
-import {
-  getToken,
-  getUser,
-  setToken,
-  setUser,
-  clearSession,
-  startLogin,
-  pollSession,
-  User,
-} from './auth';
-import { drawPixel, Pixel } from './api';
+import { getUser, setUser, clearSession, startLogin, pollSession, User } from './auth';
+import { drawPixel, logoutSession, Pixel } from './api';
 import {
   initCanvas,
   unsubscribeAll,
@@ -20,7 +11,6 @@ import {
   getActiveArea,
 } from './canvas';
 
-// DOM elements
 const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
 const logoutBtn = document.getElementById('logout-btn') as HTMLButtonElement;
 const userInfo = document.getElementById('user-info') as HTMLDivElement;
@@ -42,7 +32,6 @@ const getInitialOffset = (min: number, max: number): number => {
   return Math.round((min + max - (viewPixels - 1)) / 2);
 };
 
-// Update UI based on auth state
 const updateAuthUI = (user: User | null): void => {
   currentUser = user;
 
@@ -58,7 +47,6 @@ const updateAuthUI = (user: User | null): void => {
       userAvatar.style.display = 'none';
     }
 
-    // Enable draw if pixel selected
     drawBtn.disabled = getState().selected === null;
   } else {
     loginBtn.style.display = 'block';
@@ -67,7 +55,6 @@ const updateAuthUI = (user: User | null): void => {
   }
 };
 
-// Update pixel info display
 const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
   coordsEl.textContent = `Position : (${x}, ${y})`;
 
@@ -87,7 +74,6 @@ const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
   }
 };
 
-// Set status message
 const setStatus = (msg: string, type: 'info' | 'error' | 'success' = 'info'): void => {
   statusEl.textContent = msg;
   statusEl.className = type === 'info' ? '' : type;
@@ -98,7 +84,6 @@ const updateViewportInfo = (): void => {
   viewportEl.textContent = `Origine : (${offsetX}, ${offsetY})`;
 };
 
-// Handle draw button click
 const handleDraw = async (): Promise<void> => {
   const selected = getState().selected;
   if (!selected || !currentUser) return;
@@ -119,7 +104,6 @@ const handleDraw = async (): Promise<void> => {
   }
 };
 
-// Handle OAuth callback
 const handleOAuthCallback = async (): Promise<boolean> => {
   const params = new URLSearchParams(window.location.search);
   const state = params.get('oauth_state');
@@ -130,10 +114,8 @@ const handleOAuthCallback = async (): Promise<boolean> => {
   const result = await pollSession(state);
   if (result) {
     try {
-      setToken(result.apiToken);
       setUser(result.user);
       updateAuthUI(result.user);
-      // Clear URL params
       window.history.replaceState({}, '', window.location.pathname);
       return true;
     } catch (error) {
@@ -150,47 +132,55 @@ const handleOAuthCallback = async (): Promise<boolean> => {
   return false;
 };
 
-// Initialize app
 const init = async (): Promise<void> => {
-  // Check OAuth callback
   if (window.location.search.includes('oauth_state')) {
     await handleOAuthCallback();
   }
 
-  // Restore session
-  const token = getToken();
   const user = getUser();
-  if (token && user) {
+  if (user) {
     updateAuthUI(user);
   } else {
     clearSession();
     updateAuthUI(null);
   }
 
-  // Initialize canvas
   initCanvas(canvasEl);
 
   if (!currentUser) {
     setOffset(0, 0, false);
     setStatus('Connexion requise');
   } else {
-    // Get active area and center view
     try {
       const area = await getActiveArea();
       const offsetX = getInitialOffset(area.minX, area.maxX);
       const offsetY = getInitialOffset(area.minY, area.maxY);
       setOffset(offsetX, offsetY);
       setStatus('Connecté', 'success');
-    } catch {
-      setOffset(0, 0);
-      setStatus('Connecté (nouveau canvas)', 'success');
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes('HTTP 401') || error.message.includes('HTTP 403'))
+      ) {
+        clearSession();
+        updateAuthUI(null);
+        setOffset(0, 0, false);
+        setStatus('Connexion requise');
+      } else {
+        setOffset(0, 0);
+        setStatus('Connecté (nouveau canvas)', 'success');
+      }
     }
   }
 
-  // Event listeners
   loginBtn.addEventListener('click', startLogin);
 
   logoutBtn.addEventListener('click', async () => {
+    try {
+      await logoutSession();
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
     clearSession();
     updateAuthUI(null);
     unsubscribeAll();
@@ -199,7 +189,6 @@ const init = async (): Promise<void> => {
 
   drawBtn.addEventListener('click', handleDraw);
 
-  // Canvas events
   window.addEventListener('pixelSelected', ((e: CustomEvent) => {
     const { x, y, pixel } = e.detail;
     updatePixelInfo(x, y, pixel);
@@ -224,7 +213,6 @@ const init = async (): Promise<void> => {
   }) as EventListener);
 };
 
-// Start
 init().catch((err) => {
   console.error('Init failed:', err);
   setStatus("Échec d'initialisation", 'error');

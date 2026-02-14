@@ -1,20 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { resolveProjectId } from './lib/projects.mjs';
+import { runCapture, runInherit } from './lib/gcloud.mjs';
 
 const [, , environment] = process.argv;
 
-const projects = {
-  dev: 'serverless-felix-dev',
-  prd: 'serverless-felix-prd',
-};
-
-if (!environment || !(environment in projects)) {
-  console.error('Usage: node scripts/deploy-monitoring.mjs <dev|prd>');
-  process.exit(1);
-}
-
-const projectId = projects[environment];
+const projectId = resolveProjectId(
+  environment,
+  'Usage: node scripts/deploy-monitoring.mjs <dev|prd>',
+);
 const displayName = `Serverless Felix - Core Ops (${environment})`;
 const templatePath = path.resolve('monitoring', 'dashboard.core.template.json');
 const renderedPath = path.resolve('monitoring', `dashboard.${environment}.json`);
@@ -34,32 +28,10 @@ const renderTemplate = () => {
   fs.writeFileSync(renderedPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
 };
 
-const readRenderedConfig = () =>
-  JSON.parse(fs.readFileSync(renderedPath, 'utf8'));
+const readRenderedConfig = () => JSON.parse(fs.readFileSync(renderedPath, 'utf8'));
 
 const writeRenderedConfig = (config) => {
   fs.writeFileSync(renderedPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
-};
-
-const runCapture = (args) => {
-  const result = spawnSync('gcloud', args, { encoding: 'utf8' });
-  if (result.status !== 0) {
-    if (result.stdout) {
-      process.stdout.write(result.stdout);
-    }
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-    }
-    process.exit(result.status ?? 1);
-  }
-  return (result.stdout ?? '').trim();
-};
-
-const runInherit = (args) => {
-  const result = spawnSync('gcloud', args, { stdio: 'inherit' });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
 };
 
 renderTemplate();

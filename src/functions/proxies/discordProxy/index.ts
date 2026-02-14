@@ -11,9 +11,9 @@ import { JobPayload, publishJob } from '../../shared/queue.js';
 import {
   getHttpRequestContext,
   logError,
-  logInfo,
   logWarn,
 } from '../../shared/observability.js';
+import { normalizeHexColor, parseIntStrict } from '../../shared/validation.js';
 
 type DiscordOption = {
   name?: string;
@@ -45,30 +45,6 @@ const getOptionValue = (options: unknown[] | undefined, name: string): unknown =
     }
   }
   return undefined;
-};
-
-const parseIntOption = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isInteger(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed)) {
-      return parsed;
-    }
-  }
-  return null;
-};
-
-const normalizeColor = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const trimmed = value.trim().toLowerCase();
-  if (!/^#?[0-9a-f]{6}$/.test(trimmed)) {
-    return null;
-  }
-  return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
 };
 
 export const discordProxy: HttpFunction = async (req, res) => {
@@ -178,9 +154,9 @@ export const discordProxy: HttpFunction = async (req, res) => {
 
   switch (command.jobType) {
     case 'draw.requested': {
-      const xValue = parseIntOption(getOptionValue(options, 'x'));
-      const yValue = parseIntOption(getOptionValue(options, 'y'));
-      const colorValue = normalizeColor(getOptionValue(options, 'color'));
+      const xValue = parseIntStrict(getOptionValue(options, 'x'));
+      const yValue = parseIntStrict(getOptionValue(options, 'y'));
+      const colorValue = normalizeHexColor(getOptionValue(options, 'color'));
       if (xValue === null || yValue === null || !colorValue) {
         respondEphemeral(res, 'Paramètres de dessin invalides. Utilisez : /draw x y color');
         return;
@@ -246,41 +222,31 @@ export const discordProxy: HttpFunction = async (req, res) => {
       break;
     }
     default:
-      respondEphemeral(res, 'Commande inconnue.');
+      respondEphemeral(res, 'Commande non prise en charge.');
       return;
   }
 
   try {
-    await publishJob(payload, {
-      source: 'discord',
-      kind: payload.kind,
-    });
-    logInfo('discord_proxy_enqueued', {
-      ...requestContext,
-      kind: payload.kind,
-      interactionId: interaction.id,
-      commandName: interaction.data?.name,
-      userId,
-    });
+    await publishJob(payload, { source: 'discord', kind: payload.kind });
   } catch (error) {
     logError('discord_proxy_publish_failed', error, {
       ...requestContext,
-      kind: payload.kind,
+      commandName: command.name,
+      jobKind: payload.kind,
       interactionId: interaction.id,
-      commandName: interaction.data?.name,
       userId,
     });
-    res.status(500).json({
-      type: InteractionResponseType.ChannelMessageWithSource,
-      data: {
-        content: "Impossible de mettre la commande en file d'attente. Réessayez plus tard.",
-        flags: 64,
-      },
-    });
+    respondEphemeral(
+      res,
+      'Impossible de prendre en compte la commande pour le moment. Réessayez plus tard.',
+    );
     return;
   }
 
   res.status(200).json({
     type: InteractionResponseType.DeferredChannelMessageWithSource,
+    data: {
+      flags: 64,
+    },
   });
 };

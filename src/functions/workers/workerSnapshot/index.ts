@@ -3,7 +3,6 @@ import { Firestore } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
 import { PNG } from 'pngjs';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
-import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
 import {
   getWorkerContext,
@@ -11,18 +10,14 @@ import {
   logInfo,
   logWarn,
 } from '../../shared/observability.js';
+import { parseJob } from '../../shared/pubsubJob.js';
+import { toPositiveInt } from '../../shared/env.js';
+import { toChunkRange } from '../../shared/canvasMath.js';
+import { parseIntStrict, toRoundId } from '../../shared/validation.js';
 
 const firestore = new Firestore();
 const storage = new Storage();
 const activeAreaRef = firestore.doc('activeArea/current');
-
-const toPositiveInt = (value: string | undefined, fallback: number): number => {
-  const parsed = Number(value);
-  if (Number.isInteger(parsed) && parsed > 0) {
-    return parsed;
-  }
-  return fallback;
-};
 
 const CHUNK_SIZE = toPositiveInt(process.env.CANVAS_CHUNK_SIZE, 50);
 const SNAPSHOT_BUCKET = process.env.SNAPSHOT_BUCKET ?? '';
@@ -76,37 +71,8 @@ const parseHexColor = (
   };
 };
 
-const toInt = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isInteger(value)) {
-    return value;
-  }
-  return null;
-};
-const toRoundId = (value: unknown): string | null =>
-  typeof value === 'string' && value.trim() ? value : null;
-
 const clampInt = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, Math.floor(value)));
-
-const toChunkRange = (
-  minX: number,
-  minY: number,
-  maxX: number,
-  maxY: number,
-): Array<{ chunkX: number; chunkY: number; chunkId: string }> => {
-  const startChunkX = Math.floor(minX / CHUNK_SIZE);
-  const startChunkY = Math.floor(minY / CHUNK_SIZE);
-  const endChunkX = Math.floor(maxX / CHUNK_SIZE);
-  const endChunkY = Math.floor(maxY / CHUNK_SIZE);
-
-  const chunks: Array<{ chunkX: number; chunkY: number; chunkId: string }> = [];
-  for (let chunkX = startChunkX; chunkX <= endChunkX; chunkX++) {
-    for (let chunkY = startChunkY; chunkY <= endChunkY; chunkY++) {
-      chunks.push({ chunkX, chunkY, chunkId: `${chunkX}_${chunkY}` });
-    }
-  }
-  return chunks;
-};
 
 const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
   const activeAreaSnap = await activeAreaRef.get();
@@ -116,10 +82,10 @@ const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
 
   const activeData = activeAreaSnap.data() as ActiveArea;
   const roundId = toRoundId(activeData.roundId);
-  const minX = toInt(activeData.minX);
-  const minY = toInt(activeData.minY);
-  const maxX = toInt(activeData.maxX);
-  const maxY = toInt(activeData.maxY);
+  const minX = parseIntStrict(activeData.minX);
+  const minY = parseIntStrict(activeData.minY);
+  const maxX = parseIntStrict(activeData.maxX);
+  const maxY = parseIntStrict(activeData.maxY);
   if (
     minX === null ||
     minY === null ||
@@ -131,7 +97,7 @@ const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
     return null;
   }
 
-  const chunks = toChunkRange(minX, minY, maxX, maxY);
+  const chunks = toChunkRange(minX, minY, maxX, maxY, CHUNK_SIZE);
   if (chunks.length > SNAPSHOT_MAX_CHUNKS) {
     throw new Error(
       `Snapshot area is too large (${chunks.length} chunks > ${SNAPSHOT_MAX_CHUNKS}).`,
@@ -156,8 +122,8 @@ const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
         color?: unknown;
         roundId?: unknown;
       };
-      const x = toInt(data.x);
-      const y = toInt(data.y);
+      const x = parseIntStrict(data.x);
+      const y = parseIntStrict(data.y);
       if (x === null || y === null) {
         continue;
       }
@@ -284,62 +250,12 @@ const uploadSnapshot = async (
   return { url };
 };
 
-const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
-  const data = event.data;
-  if (!data) {
-    return null;
-  }
-  if (typeof data === 'string') {
-    return data;
-  }
-  if (Buffer.isBuffer(data)) {
-    return data.toString('utf8');
-  }
-  const messageData = (data as { message?: { data?: unknown } }).message?.data;
-  if (typeof messageData === 'string') {
-    return messageData;
-  }
-  if (Buffer.isBuffer(messageData)) {
-    return messageData.toString('utf8');
-  }
-  const legacyData = (data as { data?: unknown }).data;
-  if (typeof legacyData === 'string') {
-    return legacyData;
-  }
-  if (Buffer.isBuffer(legacyData)) {
-    return legacyData.toString('utf8');
-  }
-  return null;
-};
-
-const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
-  const raw = extractMessageData(event);
-  if (!raw) {
-    logWarn('worker_snapshot_missing_message_data', {
-      eventId: event.id ?? null,
-      dataType: typeof event.data,
-      hasMessage: Boolean(event.data?.message),
-    });
-    return null;
-  }
-  try {
-    const decoded = Buffer.from(raw, 'base64').toString('utf8');
-    return JSON.parse(decoded) as JobPayload;
-  } catch (error) {
-    try {
-      return JSON.parse(raw) as JobPayload;
-    } catch (fallbackError) {
-      logError('worker_snapshot_parse_failed', fallbackError, {
-        eventId: event.id ?? null,
-        primaryError: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-  }
-};
-
 export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
-  const job = parseJob(event);
+  const job = parseJob(
+    event,
+    'worker_snapshot_parse_failed',
+    'worker_snapshot_missing_message_data',
+  );
   if (!job || job.kind !== 'snapshot.requested') {
     return;
   }

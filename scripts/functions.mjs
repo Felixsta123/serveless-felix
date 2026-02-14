@@ -1,3 +1,39 @@
+const requiredByEnvironment = {
+  dev: [
+    'DEV_WEB_APP_URL',
+    'DEV_DISCORD_ADMIN_ROLE_ID',
+    'DEV_SNAPSHOT_BUCKET',
+  ],
+  prd: [
+    'PRD_WEB_APP_URL',
+    'PRD_DISCORD_ADMIN_ROLE_ID',
+    'PRD_SNAPSHOT_BUCKET',
+  ],
+};
+
+const readEnvironmentValues = (environment) => {
+  const required = requiredByEnvironment[environment] ?? [];
+  const missing = required.filter((key) => {
+    const value = process.env[key];
+    return value === undefined || value === '';
+  });
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required env for ${environment}: ${missing.join(', ')}`,
+    );
+  }
+
+  const prefix = environment.toUpperCase();
+  return {
+    WEB_APP_URL: process.env[`${prefix}_WEB_APP_URL`],
+    DISCORD_ADMIN_ROLE_ID: process.env[`${prefix}_DISCORD_ADMIN_ROLE_ID`],
+    SNAPSHOT_BUCKET: process.env[`${prefix}_SNAPSHOT_BUCKET`],
+  };
+};
+
+export const getEnvironmentValues = (environment) => readEnvironmentValues(environment);
+
 export const functions = {
   discordProxy: {
     trigger: 'http',
@@ -10,26 +46,12 @@ export const functions = {
   webProxy: {
     trigger: 'http',
     serviceAccount: 'proxy',
-    envByEnvironment: {
-      dev: {
-        WEB_APP_URL: 'https://serverless-felix-dev.web.app',
-      },
-      prd: {
-        WEB_APP_URL: 'https://serverless-felix-prd.web.app',
-      },
-    },
+    envByEnvironmentFromConfig: ['WEB_APP_URL'],
   },
   oauthProxy: {
     trigger: 'http',
     serviceAccount: 'proxy',
-    envByEnvironment: {
-      dev: {
-        WEB_APP_URL: 'https://serverless-felix-dev.web.app',
-      },
-      prd: {
-        WEB_APP_URL: 'https://serverless-felix-prd.web.app',
-      },
-    },
+    envByEnvironmentFromConfig: ['WEB_APP_URL'],
     secrets: {
       DISCORD_CLIENT_ID: 'discord_client_id',
       DISCORD_REDIRECT_URI: 'oauth_redirect_uri',
@@ -46,18 +68,8 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
     serviceAccount: 'worker',
-    envByEnvironment: {
-      dev: {
-        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
-        SNAPSHOT_BUCKET: 'serverless-felix-dev-snapshots',
-      },
-      prd: {
-        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
-        SNAPSHOT_BUCKET: 'serverless-felix-prd-snapshots',
-      },
-    },
+    envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID', 'SNAPSHOT_BUCKET'],
     envFromProcess: [
-      'DISCORD_ADMIN_ROLE_ID',
       'CANVAS_CHUNK_SIZE',
       'SNAPSHOT_PIXEL_SCALE',
       'SNAPSHOT_MAX_DIM',
@@ -69,17 +81,7 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
     serviceAccount: 'worker',
-    envByEnvironment: {
-      dev: {
-        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
-        WEB_APP_URL: 'https://serverless-felix-dev.web.app',
-      },
-      prd: {
-        DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
-        WEB_APP_URL: 'https://serverless-felix-prd.web.app',
-      },
-    },
-    envFromProcess: ['DISCORD_ADMIN_ROLE_ID'],
+    envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID', 'WEB_APP_URL'],
   },
   workerOAuth: {
     trigger: 'topic',

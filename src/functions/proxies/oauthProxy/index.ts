@@ -7,11 +7,11 @@ import {
   logInfo,
   logWarn,
 } from '../../shared/observability.js';
+import { isHexState } from '../../shared/validation.js';
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '';
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI ?? '';
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
-const STATE_PATTERN = /^[a-f0-9]{32}$/i;
 
 const generateState = (): string => crypto.randomBytes(16).toString('hex');
 
@@ -29,10 +29,23 @@ const buildDiscordAuthUrl = (state: string): string => {
 export const oauthProxy: HttpFunction = async (req, res) => {
   const requestContext = getHttpRequestContext(req);
 
-  // CORS headers for web app
-  res.set('Access-Control-Allow-Origin', WEB_APP_URL || '*');
+  if (!WEB_APP_URL) {
+    logError(
+      'oauth_proxy_missing_web_app_url',
+      new Error('Web application URL is not configured'),
+      {
+        ...requestContext,
+        path: req.path,
+      },
+    );
+    res.status(500).json({ error: 'Web application URL is not configured' });
+    return;
+  }
+
+  res.set('Access-Control-Allow-Origin', WEB_APP_URL);
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
     logInfo('oauth_proxy_preflight', {
@@ -54,7 +67,6 @@ export const oauthProxy: HttpFunction = async (req, res) => {
 
   const { code, state, action } = req.query as Record<string, string | undefined>;
 
-  // Step 1: Initiate OAuth flow - redirect user to Discord
   if (action === 'login') {
     if (!DISCORD_CLIENT_ID || !DISCORD_REDIRECT_URI) {
       logError('oauth_proxy_missing_oauth_config', new Error('OAuth is not configured'), {
@@ -65,8 +77,10 @@ export const oauthProxy: HttpFunction = async (req, res) => {
     }
     const newState = generateState();
     const authUrl = buildDiscordAuthUrl(newState);
-    // Set state in cookie for validation on callback
-    res.set('Set-Cookie', `oauth_state=${newState}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`);
+    res.set(
+      'Set-Cookie',
+      `oauth_state=${newState}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+    );
     logInfo('oauth_proxy_login_redirect', {
       ...requestContext,
       oauthState: newState,
@@ -75,9 +89,8 @@ export const oauthProxy: HttpFunction = async (req, res) => {
     return;
   }
 
-  // Step 2: Handle OAuth callback from Discord
   if (code && state) {
-    if (!STATE_PATTERN.test(state)) {
+    if (!isHexState(state)) {
       logWarn('oauth_proxy_invalid_state_format', {
         ...requestContext,
       });
@@ -85,7 +98,6 @@ export const oauthProxy: HttpFunction = async (req, res) => {
       return;
     }
 
-    // Validate state from cookie
     const cookies = req.headers.cookie ?? '';
     const stateCookie = cookies
       .split(';')
@@ -102,10 +114,8 @@ export const oauthProxy: HttpFunction = async (req, res) => {
       return;
     }
 
-    // Clear the state cookie
     res.set('Set-Cookie', 'oauth_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/');
 
-    // Enqueue the token exchange job
     const payload: OAuthExchangeJobPayload = {
       kind: 'oauth.exchange',
       receivedAt: new Date().toISOString(),
@@ -132,27 +142,11 @@ export const oauthProxy: HttpFunction = async (req, res) => {
       return;
     }
 
-    // Redirect to web app with state for session polling
-    // Use query param on main page since we're using static hosting (no SPA router)
-    if (!WEB_APP_URL) {
-      logError(
-        'oauth_proxy_missing_web_app_url',
-        new Error('Web application URL is not configured'),
-        {
-          ...requestContext,
-          oauthState: state,
-        },
-      );
-      res.status(500).json({ error: 'Web application URL is not configured' });
-      return;
-    }
-
     const redirectUrl = `${WEB_APP_URL}?oauth_state=${encodeURIComponent(state)}`;
     res.redirect(302, redirectUrl);
     return;
   }
 
-  // Invalid request
   logWarn('oauth_proxy_invalid_request', {
     ...requestContext,
     action: action ?? null,

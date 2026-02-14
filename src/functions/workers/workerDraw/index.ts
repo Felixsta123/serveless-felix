@@ -1,14 +1,15 @@
 import { CloudEvent } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp, FieldValue } from '@google-cloud/firestore';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
-import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
 import {
   getWorkerContext,
   logError,
   logInfo,
-  logWarn,
 } from '../../shared/observability.js';
+import { parseJob } from '../../shared/pubsubJob.js';
+import { chunkIdFor } from '../../shared/canvasMath.js';
+import { toRoundId } from '../../shared/validation.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
@@ -16,60 +17,6 @@ const activeAreaRef = firestore.doc('activeArea/current');
 
 const RATE_LIMIT_PER_MINUTE = Number(process.env.RATE_LIMIT_PER_MINUTE ?? 20);
 const CHUNK_SIZE = Number(process.env.CANVAS_CHUNK_SIZE ?? 50);
-
-const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
-  const data = event.data;
-  if (!data) {
-    return null;
-  }
-  if (typeof data === 'string') {
-    return data;
-  }
-  if (Buffer.isBuffer(data)) {
-    return data.toString('utf8');
-  }
-  const messageData = (data as { message?: { data?: unknown } }).message?.data;
-  if (typeof messageData === 'string') {
-    return messageData;
-  }
-  if (Buffer.isBuffer(messageData)) {
-    return messageData.toString('utf8');
-  }
-  const legacyData = (data as { data?: unknown }).data;
-  if (typeof legacyData === 'string') {
-    return legacyData;
-  }
-  if (Buffer.isBuffer(legacyData)) {
-    return legacyData.toString('utf8');
-  }
-  return null;
-};
-
-const parseJob = (event: CloudEvent<PubSubEnvelope>): JobPayload | null => {
-  const raw = extractMessageData(event);
-  if (!raw) {
-    logWarn('worker_draw_missing_message_data', {
-      eventId: event.id ?? null,
-      dataType: typeof event.data,
-      hasMessage: Boolean(event.data?.message),
-    });
-    return null;
-  }
-  try {
-    const decoded = Buffer.from(raw, 'base64').toString('utf8');
-    return JSON.parse(decoded) as JobPayload;
-  } catch (error) {
-    try {
-      return JSON.parse(raw) as JobPayload;
-    } catch (fallbackError) {
-      logError('worker_draw_parse_failed', fallbackError, {
-        eventId: event.id ?? null,
-        primaryError: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-  }
-};
 
 const toMinuteKey = (date: Date): string => {
   const year = date.getUTCFullYear();
@@ -80,18 +27,14 @@ const toMinuteKey = (date: Date): string => {
   return `${year}${month}${day}${hour}${minute}`;
 };
 
-const chunkIdFor = (x: number, y: number): string => {
-  const chunkX = Math.floor(x / CHUNK_SIZE);
-  const chunkY = Math.floor(y / CHUNK_SIZE);
-  return `${chunkX}_${chunkY}`;
-};
-
 const pixelIdFor = (x: number, y: number): string => `${x}_${y}`;
-const toRoundId = (value: unknown): string | null =>
-  typeof value === 'string' && value.trim() ? value : null;
 
 export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
-  const job = parseJob(event);
+  const job = parseJob(
+    event,
+    'worker_draw_parse_failed',
+    'worker_draw_missing_message_data',
+  );
   if (!job || job.kind !== 'draw.requested') {
     return;
   }
@@ -101,7 +44,7 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
     job.interaction?.id ?? `${job.userId}:${job.receivedAt}:${job.x}:${job.y}`;
   const now = new Date();
   const minuteKey = toMinuteKey(now);
-  const chunkId = chunkIdFor(job.x, job.y);
+  const chunkId = chunkIdFor(job.x, job.y, CHUNK_SIZE);
   const pixelId = pixelIdFor(job.x, job.y);
 
   const idempotencyRef = firestore.doc(`idempotency/${eventId}`);

@@ -1,21 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { resolveProjectId } from './lib/projects.mjs';
+import { exists, runInherit, runResult } from './lib/gcloud.mjs';
 
 const [, , environment] = process.argv;
 const region = 'europe-west1';
 
-const projects = {
-  dev: 'serverless-felix-dev',
-  prd: 'serverless-felix-prd',
-};
-
-if (!environment || !(environment in projects)) {
-  console.error('Usage: node scripts/deploy-gateway.mjs <dev|prd>');
-  process.exit(1);
-}
-
-const projectId = projects[environment];
+const projectId = resolveProjectId(
+  environment,
+  'Usage: node scripts/deploy-gateway.mjs <dev|prd>',
+);
 const apiId = `serverless-felix-${environment}`;
 const gatewayId = `serverless-felix-${environment}-gateway`;
 const configId = `config-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
@@ -32,17 +26,15 @@ const rendered = template
 fs.writeFileSync(outputPath, rendered, 'utf8');
 
 const run = (args, options = {}) => {
-  const result = spawnSync('gcloud', args, { stdio: 'inherit', ...options });
+  const result = runResult(args, { stdio: 'inherit', ...options });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
 };
 
 const runOptional = (args, options = {}) => {
-  spawnSync('gcloud', args, { stdio: 'inherit', ...options });
+  runResult(args, { stdio: 'inherit', ...options });
 };
-
-const exists = (args) => spawnSync('gcloud', args, { stdio: 'ignore' }).status === 0;
 
 const proxyFunctions = ['discordProxy', 'webProxy', 'oauthProxy'];
 const lockDownFunctions = [...proxyFunctions];
@@ -63,7 +55,7 @@ if (
 }
 
 for (const fn of proxyFunctions) {
-  run([
+  runInherit([
     'functions',
     'add-invoker-policy-binding',
     fn,
@@ -108,10 +100,10 @@ for (const fn of lockDownFunctions) {
 }
 
 if (!exists(['api-gateway', 'apis', 'describe', apiId, '--project', projectId])) {
-  run(['api-gateway', 'apis', 'create', apiId, '--project', projectId]);
+  runInherit(['api-gateway', 'apis', 'create', apiId, '--project', projectId]);
 }
 
-run([
+runInherit([
   'api-gateway',
   'api-configs',
   'create',
@@ -138,7 +130,7 @@ if (
     projectId,
   ])
 ) {
-  run([
+  runInherit([
     'api-gateway',
     'gateways',
     'create',
@@ -153,7 +145,7 @@ if (
     projectId,
   ]);
 } else {
-  run([
+  runInherit([
     'api-gateway',
     'gateways',
     'update',
@@ -169,7 +161,7 @@ if (
   ]);
 }
 
-run([
+runInherit([
   'api-gateway',
   'gateways',
   'describe',

@@ -1,22 +1,17 @@
 import { config } from './config';
-import { getToken } from './auth';
 
-const getAuthHeaders = (): Record<string, string> => {
-  const token = getToken();
-  if (!token) {
-    throw new Error('Not authenticated');
-  }
-  return {
-    'Content-Type': 'application/json',
-    'X-Session-Token': token,
-  };
-};
+const authFetch = (input: string, init: RequestInit = {}) =>
+  fetch(input, {
+    ...init,
+    credentials: 'include',
+  });
 
-// Draw a pixel via API
 export const drawPixel = async (x: number, y: number, color: string): Promise<void> => {
-  const res = await fetch(`${config.apiGateway}/web/draw`, {
+  const res = await authFetch(`${config.apiGateway}/web/draw`, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ x, y, color }),
   });
 
@@ -24,6 +19,12 @@ export const drawPixel = async (x: number, y: number, color: string): Promise<vo
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `HTTP ${res.status}`);
   }
+};
+
+export const logoutSession = async (): Promise<void> => {
+  await authFetch(`${config.apiGateway}/web/logout`, {
+    method: 'POST',
+  });
 };
 
 export type Pixel = {
@@ -61,11 +62,8 @@ export type CanvasWindowResponse = {
 };
 
 export const getActiveArea = async (): Promise<ActiveArea> => {
-  const res = await fetch(`${config.apiGateway}/web/active-area`, {
+  const res = await authFetch(`${config.apiGateway}/web/active-area`, {
     method: 'GET',
-    headers: {
-      'X-Session-Token': getToken() ?? '',
-    },
   });
 
   if (!res.ok) {
@@ -86,11 +84,8 @@ export const getCanvasWindow = async (
     offsetY: String(offsetY),
     size: String(size),
   });
-  const res = await fetch(`${config.apiGateway}/web/canvas?${params.toString()}`, {
+  const res = await authFetch(`${config.apiGateway}/web/canvas?${params.toString()}`, {
     method: 'GET',
-    headers: {
-      'X-Session-Token': getToken() ?? '',
-    },
   });
 
   if (!res.ok) {
