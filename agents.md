@@ -25,7 +25,7 @@ Build a fully serverless, event-driven pixel canvas (r/place style) with Discord
 - Deployed (dev): Firebase Hosting at https://serverless-felix-dev.web.app
 - Deployed (dev): `DISCORD_ADMIN_ROLE_ID=1471881086521839656` on both `workerDiscord` and `workerSnapshot`.
 - Firestore schema implemented and used: `chunks/pixels`, `sessions`, `activeArea`, `rate`, `idempotency`, `eventsByDay`, `config/session`.
-- Remaining infra/docs gaps: monitoring notification channels/tuning, TTL cleanup, DLQ/retry hardening, README + architecture diagram, prd project bootstrap.
+- Remaining infra/docs gaps: monitoring notification channels/tuning, TTL cleanup, README + architecture diagram, prd project bootstrap.
 
 ## Ground rules for changes
 - Do not add direct HTTP calls to workers.

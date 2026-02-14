@@ -38,6 +38,7 @@ export const functions = {
   workerDraw: {
     trigger: 'topic',
     topic: 'jobs',
+    retry: true,
     serviceAccount: 'worker',
     envFromProcess: ['RATE_LIMIT_PER_MINUTE', 'CANVAS_CHUNK_SIZE'],
   },

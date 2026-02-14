@@ -41,8 +41,8 @@ All public traffic goes through API Gateway -> proxy functions -> Pub/Sub -> wor
   - `DISCORD_ADMIN_ROLE_ID=1471881086521839656` on `workerDiscord` and `workerSnapshot`.
 
 ### 3.2 Implemented but still risky/incomplete
-- Event triggers are currently `RETRY_POLICY_DO_NOT_RETRY`.
-- No Pub/Sub DLQ configured.
+- `workerDraw` retry enabled; other workers remain `RETRY_POLICY_DO_NOT_RETRY` intentionally (non-idempotent side effects).
+- Pub/Sub DLQ strategy implemented (`jobs-dlq` + dead-letter policy on worker subscriptions in dev).
 - Firestore TTL policies are not configured (idempotency/session cleanup).
 - Legacy Firestore collections remain from previous schema (`canvas`, `ratelimit`).
 

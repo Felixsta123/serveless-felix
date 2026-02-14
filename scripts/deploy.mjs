@@ -118,6 +118,9 @@ for (const name of names) {
 
   if (config.trigger === 'topic' && config.topic) {
     args.push('--trigger-topic', config.topic);
+    if (config.retry) {
+      args.push('--retry');
+    }
   }
 
   const serviceAccount = resolveServiceAccount(config.serviceAccount);
