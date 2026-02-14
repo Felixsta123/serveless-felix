@@ -43,7 +43,7 @@ All public traffic goes through API Gateway -> proxy functions -> Pub/Sub -> wor
 ### 3.2 Implemented but still risky/incomplete
 - `workerDraw` retry enabled; other workers remain `RETRY_POLICY_DO_NOT_RETRY` intentionally (non-idempotent side effects).
 - Pub/Sub DLQ strategy implemented (`jobs-dlq` + dead-letter policy on worker subscriptions in dev).
-- Firestore TTL policies are not configured (idempotency/session cleanup).
+- Firestore TTL configured in dev (`sessions.expiresAt`, `idempotency.createdAt`); rollout to prd pending.
 - Legacy Firestore collections remain from previous schema (`canvas`, `ratelimit`).
 
 ### 3.3 Missing deliverables against subject/defense
@@ -116,7 +116,7 @@ Legacy (cleanup planned)
 1. Reliability hardening
    - Add Pub/Sub DLQ strategy.
    - Switch from no-retry to safe retry policies where appropriate.
-   - Configure Firestore TTL (idempotency and stale sessions; optional rate cleanup).
+   - Replicate Firestore TTL configuration in prd and verify states (`CREATING` -> `ACTIVE`).
 
 2. Observability and defense evidence
    - Standardize structured logs with correlation IDs across proxy -> worker flow.

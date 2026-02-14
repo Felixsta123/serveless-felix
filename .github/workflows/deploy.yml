@@ -59,6 +59,8 @@ jobs:
               - 'scripts/deploy-alerts.mjs'
             reliability:
               - 'scripts/deploy-reliability.mjs'
+            ttl:
+              - 'scripts/deploy-ttl.mjs'
             web:
               - 'web/**'
 
@@ -116,6 +118,7 @@ jobs:
           echo "gateway_changed=${{ steps.changes.outputs.gateway }}" >> "$GITHUB_OUTPUT"
           echo "monitoring_changed=${{ steps.changes.outputs.monitoring }}" >> "$GITHUB_OUTPUT"
           echo "reliability_changed=${{ steps.changes.outputs.reliability }}" >> "$GITHUB_OUTPUT"
+          echo "ttl_changed=${{ steps.changes.outputs.ttl }}" >> "$GITHUB_OUTPUT"
           echo "web_changed=${{ steps.changes.outputs.web }}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
@@ -129,7 +132,7 @@ jobs:
         run: npm ci
 
       - name: Authenticate to Google Cloud
-        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.reliability_changed == 'true' || steps.plan.outputs.web_changed == 'true'
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.reliability_changed == 'true' || steps.plan.outputs.ttl_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
@@ -137,7 +140,7 @@ jobs:
           export_environment_variables: true
 
       - name: Set GCP Keyfile Path
-        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.reliability_changed == 'true' || steps.plan.outputs.web_changed == 'true'
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.reliability_changed == 'true' || steps.plan.outputs.ttl_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         run: echo "GCP_KEYFILE_PATH=${{ env.GOOGLE_APPLICATION_CREDENTIALS }}" >> $GITHUB_ENV
 
       - name: Deploy changed functions to Dev
@@ -164,6 +167,10 @@ jobs:
       - name: Apply Reliability Hardening (Dev)
         if: github.ref == 'refs/heads/dev' && steps.plan.outputs.reliability_changed == 'true'
         run: npm run deploy:dev:reliability
+
+      - name: Apply Firestore TTL (Dev)
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.ttl_changed == 'true'
+        run: npm run deploy:dev:ttl
 
       - name: Build Web App (Dev)
         if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
@@ -199,6 +206,10 @@ jobs:
       - name: Apply Reliability Hardening (Prod)
         if: github.ref == 'refs/heads/main' && steps.plan.outputs.reliability_changed == 'true'
         run: npm run deploy:prd:reliability
+
+      - name: Apply Firestore TTL (Prod)
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.ttl_changed == 'true'
+        run: npm run deploy:prd:ttl
 
       - name: Build Web App (Prod)
         if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'
