@@ -7,10 +7,6 @@ import {
   clearSession,
   startLogin,
   pollSession,
-  signInFirebase,
-  signOutFirebase,
-  isFirebaseAuthenticated,
-  waitForFirebaseAuth,
   User,
 } from './auth';
 import { drawPixel, Pixel } from './api';
@@ -122,7 +118,6 @@ const handleOAuthCallback = async (): Promise<boolean> => {
   const result = await pollSession(state);
   if (result) {
     try {
-      await signInFirebase(result.firebaseToken);
       setToken(result.apiToken);
       setUser(result.user);
       updateAuthUI(result.user);
@@ -130,7 +125,7 @@ const handleOAuthCallback = async (): Promise<boolean> => {
       window.history.replaceState({}, '', window.location.pathname);
       return true;
     } catch (error) {
-      console.error('Failed to sign in with Firebase custom token', error);
+      console.error('Failed to complete session setup', error);
       clearSession();
       setStatus('Login failed', 'error');
       window.history.replaceState({}, '', window.location.pathname);
@@ -145,8 +140,6 @@ const handleOAuthCallback = async (): Promise<boolean> => {
 
 // Initialize app
 const init = async (): Promise<void> => {
-  await waitForFirebaseAuth();
-
   // Check OAuth callback
   if (window.location.search.includes('oauth_state')) {
     await handleOAuthCallback();
@@ -155,7 +148,7 @@ const init = async (): Promise<void> => {
   // Restore session
   const token = getToken();
   const user = getUser();
-  if (token && user && isFirebaseAuthenticated()) {
+  if (token && user) {
     updateAuthUI(user);
   } else {
     clearSession();
@@ -186,7 +179,6 @@ const init = async (): Promise<void> => {
   loginBtn.addEventListener('click', startLogin);
 
   logoutBtn.addEventListener('click', async () => {
-    await signOutFirebase();
     clearSession();
     updateAuthUI(null);
     unsubscribeAll();

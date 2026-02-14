@@ -1,6 +1,4 @@
 import { config } from './config';
-import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
-import { auth } from './firebase';
 
 const STORAGE_KEYS = {
   token: 'pixel_canvas_token',
@@ -15,7 +13,6 @@ export type User = {
 
 export type SessionReady = {
   apiToken: string;
-  firebaseToken: string;
   user: User;
 };
 
@@ -69,7 +66,6 @@ export const pollSession = async (state: string): Promise<SessionReady | null> =
       if (data.status === 'ready') {
         return {
           apiToken: data.apiToken,
-          firebaseToken: data.firebaseToken,
           user: data.user,
         };
       }
@@ -85,23 +81,4 @@ export const pollSession = async (state: string): Promise<SessionReady | null> =
     }
   }
   return null;
-};
-
-export const signInFirebase = async (firebaseToken: string): Promise<void> => {
-  await signInWithCustomToken(auth, firebaseToken);
-};
-
-export const signOutFirebase = async (): Promise<void> => {
-  await signOut(auth);
-};
-
-export const isFirebaseAuthenticated = (): boolean => auth.currentUser !== null;
-
-export const waitForFirebaseAuth = async (): Promise<void> => {
-  await new Promise<void>((resolve) => {
-    const unsub = onAuthStateChanged(auth, () => {
-      unsub();
-      resolve();
-    });
-  });
 };

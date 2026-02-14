@@ -12,6 +12,7 @@ import {
 const firestore = new Firestore();
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
 const STATE_PATTERN = /^[a-f0-9]{32}$/i;
+const CHUNK_SIZE = Number(process.env.CANVAS_CHUNK_SIZE ?? 50);
 
 type SessionData = {
   discordUserId: string;
@@ -23,6 +24,14 @@ type SessionData = {
   expiresAt: Timestamp;
   status: string;
   error?: string;
+};
+
+type PixelRecord = {
+  x: number;
+  y: number;
+  color: string;
+  authorId: string;
+  updatedAt: string | null;
 };
 
 const setCorsHeaders = (res: Parameters<HttpFunction>[1]) => {
@@ -118,6 +127,41 @@ const normalizeColor = (value: unknown): string | null => {
   return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
 };
 
+const parsePositiveInt = (value: unknown): number | null => {
+  const parsed = parseIntParam(value);
+  if (parsed === null || parsed < 1) {
+    return null;
+  }
+  return parsed;
+};
+
+const toTimestampIso = (value: unknown): string | null => {
+  if (value instanceof Timestamp) {
+    return value.toDate().toISOString();
+  }
+  return null;
+};
+
+const toChunkRange = (
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): Array<{ chunkX: number; chunkY: number; chunkId: string }> => {
+  const startChunkX = Math.floor(minX / CHUNK_SIZE);
+  const startChunkY = Math.floor(minY / CHUNK_SIZE);
+  const endChunkX = Math.floor(maxX / CHUNK_SIZE);
+  const endChunkY = Math.floor(maxY / CHUNK_SIZE);
+
+  const chunks: Array<{ chunkX: number; chunkY: number; chunkId: string }> = [];
+  for (let chunkX = startChunkX; chunkX <= endChunkX; chunkX++) {
+    for (let chunkY = startChunkY; chunkY <= endChunkY; chunkY++) {
+      chunks.push({ chunkX, chunkY, chunkId: `${chunkX}_${chunkY}` });
+    }
+  }
+  return chunks;
+};
+
 export const webProxy: HttpFunction = async (req, res) => {
   const requestContext = getHttpRequestContext(req);
 
@@ -196,17 +240,17 @@ export const webProxy: HttpFunction = async (req, res) => {
     }
 
     if (data.status === 'ready') {
-      if (!data.token || !data.firebaseCustomToken) {
+      if (!data.token) {
         logError(
-          'web_proxy_session_missing_tokens',
-          new Error('Session is missing required tokens'),
+          'web_proxy_session_missing_token',
+          new Error('Session is missing API token'),
           {
             ...requestContext,
             path,
             state,
           },
         );
-        res.status(500).json({ status: 'error', error: 'Session is missing required tokens' });
+        res.status(500).json({ status: 'error', error: 'Session is missing API token' });
         return;
       }
       logInfo('web_proxy_session_ready', {
@@ -218,7 +262,6 @@ export const webProxy: HttpFunction = async (req, res) => {
       res.status(200).json({
         status: 'ready',
         apiToken: data.token,
-        firebaseToken: data.firebaseCustomToken,
         user: {
           id: data.discordUserId,
           username: data.discordUsername,
@@ -309,6 +352,138 @@ export const webProxy: HttpFunction = async (req, res) => {
 
     res.status(202).json({ message: 'Draw request accepted' });
     return;
+  }
+
+  // GET /active-area - Active canvas bounds (authenticated)
+  if (req.method === 'GET' && path === '/active-area') {
+    const session = await validateSession(
+      req.headers['x-session-token'] as string | undefined,
+      requestContext,
+      path,
+    );
+    if (!session) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    try {
+      const snap = await firestore.doc('activeArea/current').get();
+      if (!snap.exists) {
+        res.status(200).json({ minX: 0, minY: 0, maxX: 0, maxY: 0, roundId: null });
+        return;
+      }
+      const data = snap.data() as Record<string, unknown>;
+      res.status(200).json({
+        minX: parseIntParam(data.minX) ?? 0,
+        minY: parseIntParam(data.minY) ?? 0,
+        maxX: parseIntParam(data.maxX) ?? 0,
+        maxY: parseIntParam(data.maxY) ?? 0,
+        roundId: typeof data.roundId === 'string' ? data.roundId : null,
+      });
+      return;
+    } catch (error) {
+      logError('web_proxy_active_area_failed', error, {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+      });
+      res.status(500).json({ error: 'Failed to read active area' });
+      return;
+    }
+  }
+
+  // GET /canvas - Read visible canvas window (authenticated)
+  if (req.method === 'GET' && path === '/canvas') {
+    const session = await validateSession(
+      req.headers['x-session-token'] as string | undefined,
+      requestContext,
+      path,
+    );
+    if (!session) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const offsetX = parseIntParam(req.query.offsetX);
+    const offsetY = parseIntParam(req.query.offsetY);
+    const size = parsePositiveInt(req.query.size);
+
+    if (offsetX === null || offsetY === null || size === null || size > 500) {
+      res.status(400).json({
+        error: 'Invalid query params. Required: offsetX (int), offsetY (int), size (1-500)',
+      });
+      return;
+    }
+
+    const minX = offsetX;
+    const minY = offsetY;
+    const maxX = offsetX + size - 1;
+    const maxY = offsetY + size - 1;
+
+    try {
+      const activeSnap = await firestore.doc('activeArea/current').get();
+      const activeData = (activeSnap.data() as Record<string, unknown> | undefined) ?? {};
+      const roundId = typeof activeData.roundId === 'string' ? activeData.roundId : null;
+
+      const chunks = toChunkRange(minX, minY, maxX, maxY);
+      const chunkSnapshots = await Promise.all(
+        chunks.map(({ chunkId }) => {
+          const col = firestore.collection(`chunks/${chunkId}/pixels`);
+          return roundId ? col.where('roundId', '==', roundId).get() : col.get();
+        }),
+      );
+
+      const dedup = new Map<string, PixelRecord>();
+      for (const chunkSnap of chunkSnapshots) {
+        for (const doc of chunkSnap.docs) {
+          const data = doc.data() as Record<string, unknown>;
+          const x = parseIntParam(data.x);
+          const y = parseIntParam(data.y);
+          if (x === null || y === null) {
+            continue;
+          }
+          if (x < minX || x > maxX || y < minY || y > maxY) {
+            continue;
+          }
+          const color = typeof data.color === 'string' ? data.color : null;
+          const authorId = typeof data.authorId === 'string' ? data.authorId : null;
+          if (!color || !authorId) {
+            continue;
+          }
+          dedup.set(`${x}_${y}`, {
+            x,
+            y,
+            color,
+            authorId,
+            updatedAt: toTimestampIso(data.updatedAt),
+          });
+        }
+      }
+
+      res.status(200).json({
+        roundId,
+        window: { minX, minY, maxX, maxY, size },
+        activeArea: {
+          minX: parseIntParam(activeData.minX) ?? 0,
+          minY: parseIntParam(activeData.minY) ?? 0,
+          maxX: parseIntParam(activeData.maxX) ?? 0,
+          maxY: parseIntParam(activeData.maxY) ?? 0,
+        },
+        pixels: Array.from(dedup.values()),
+      });
+      return;
+    } catch (error) {
+      logError('web_proxy_canvas_failed', error, {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+        offsetX,
+        offsetY,
+        size,
+      });
+      res.status(500).json({ error: 'Failed to read canvas' });
+      return;
+    }
   }
 
   // Default: 404
