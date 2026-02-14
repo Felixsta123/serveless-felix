@@ -365,7 +365,7 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         job.interaction.applicationId,
         job.interaction.token,
-        'You are not allowed to create snapshots.',
+        "Vous n'êtes pas autorisé à créer des snapshots.",
         64,
       );
     } catch (error) {
@@ -387,7 +387,7 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         job.interaction.applicationId,
         job.interaction.token,
-        'No pixels found to snapshot yet.',
+        'Aucun pixel à capturer pour le moment.',
         64,
       );
       return;
@@ -401,8 +401,9 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
       job.interaction.token,
       {
         content: [
-          `${rendered.width}x${rendered.height}px (x${rendered.scale})`,
-          `Pixels: ${loaded.pixels.length}`,
+          `Snapshot du round ${loaded.roundId ?? 'inconnu'} (${loaded.minX},${loaded.minY} - ${loaded.maxX},${loaded.maxY})`,
+          `${rendered.width}x${rendered.height}px`,
+          `Pixels : ${loaded.pixels.length}`,
         ].join('\n'),
         embeds: [
           {
@@ -431,7 +432,7 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         job.interaction.applicationId,
         job.interaction.token,
-        `Snapshot failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Échec du snapshot : ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
         64,
       );
     } catch (followupError) {

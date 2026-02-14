@@ -133,7 +133,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
     res.status(200).json({
       type: InteractionResponseType.ChannelMessageWithSource,
       data: {
-        content: 'Unknown command.',
+        content: 'Commande inconnue.',
         flags: 64,
       },
     });
@@ -148,7 +148,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
       guildId: interaction.guild_id,
       allowedGuildId,
     });
-    respondEphemeral(res, 'This command is not allowed in this server.');
+    respondEphemeral(res, "Cette commande n'est pas autorisée sur ce serveur.");
     return;
   }
 
@@ -158,7 +158,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
       ...requestContext,
       interactionId: interaction.id,
     });
-    respondEphemeral(res, 'Unable to identify the user for this command.');
+    respondEphemeral(res, "Impossible d'identifier l'utilisateur pour cette commande.");
     return;
   }
 
@@ -182,7 +182,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
       const yValue = parseIntOption(getOptionValue(options, 'y'));
       const colorValue = normalizeColor(getOptionValue(options, 'color'));
       if (xValue === null || yValue === null || !colorValue) {
-        respondEphemeral(res, 'Invalid draw parameters. Use: /draw x y color');
+        respondEphemeral(res, 'Paramètres de dessin invalides. Utilisez : /draw x y color');
         return;
       }
       payload = {
@@ -216,7 +216,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
     case 'session.command': {
       const actionValue = getOptionValue(options, 'action');
       if (actionValue !== 'start' && actionValue !== 'pause' && actionValue !== 'reset') {
-        respondEphemeral(res, 'Invalid session action. Use: start, pause, reset');
+        respondEphemeral(res, 'Action de session invalide. Utilisez : start, pause, reset');
         return;
       }
       payload = {
@@ -246,7 +246,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
       break;
     }
     default:
-      respondEphemeral(res, 'Unknown command.');
+      respondEphemeral(res, 'Commande inconnue.');
       return;
   }
 
@@ -273,7 +273,7 @@ export const discordProxy: HttpFunction = async (req, res) => {
     res.status(500).json({
       type: InteractionResponseType.ChannelMessageWithSource,
       data: {
-        content: 'Failed to enqueue command. Try again later.',
+        content: "Impossible de mettre la commande en file d'attente. Réessayez plus tard.",
         flags: 64,
       },
     });

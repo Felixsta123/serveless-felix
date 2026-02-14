@@ -113,7 +113,7 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         interaction.applicationId,
         interaction.token,
-        `🎨 **Pixel Canvas is live!**\n\n🔗 ${WEB_APP_URL}\n\nLog in with Discord to draw pixels!`,
+        `🎨 **Pixel Canvas est en ligne !**\n\n🔗 ${WEB_APP_URL}\n\nConnectez-vous avec Discord pour dessiner des pixels !`,
       );
       logInfo('worker_discord_canvas_followup_sent', {
         ...context,
@@ -143,7 +143,7 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         interaction.applicationId,
         interaction.token,
-        'Session commands are unavailable: admin role is not configured.',
+        "Les commandes de session sont indisponibles : le rôle admin n'est pas configuré.",
         64,
       );
     } catch (error) {
@@ -166,7 +166,7 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         interaction.applicationId,
         interaction.token,
-        'You are not allowed to manage the session.',
+        "Vous n'êtes pas autorisé à gérer la session.",
         64,
       );
     } catch (error) {
@@ -223,8 +223,8 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       interaction.applicationId,
       interaction.token,
       job.action === 'reset'
-        ? 'Session reset: started a fresh canvas round.'
-        : `Session updated: ${nextState}.`,
+        ? 'Session réinitialisée : un nouveau round de canvas a démarré.'
+        : `Session mise à jour : ${nextState === 'paused' ? 'en pause' : 'en cours'}.`,
     );
     logInfo('worker_discord_session_updated', {
       ...context,
@@ -245,7 +245,7 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       await postDiscordFollowup(
         interaction.applicationId,
         interaction.token,
-        'Failed to update session. Try again later.',
+        'Échec de la mise à jour de la session. Réessayez plus tard.',
         64,
       );
     } catch (followupError) {

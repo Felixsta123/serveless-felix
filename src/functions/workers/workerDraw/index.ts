@@ -250,18 +250,21 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
 
   switch (result.status) {
     case 'ok':
-      await send(`Pixel updated at (${job.x}, ${job.y}) to ${job.color}.`);
+      await send(`Pixel mis à jour en (${job.x}, ${job.y}) avec ${job.color}.`);
       break;
     case 'rate_limited':
-      await send('Rate limit reached (20/min). Try again later.', 64);
+      await send(
+        `Limite de débit atteinte (${RATE_LIMIT_PER_MINUTE}/min). Réessayez plus tard.`,
+        64,
+      );
       break;
     case 'paused':
-      await send('The session is paused.', 64);
+      await send('La session est en pause.', 64);
       break;
     case 'duplicate':
-      await send('Duplicate draw request ignored.', 64);
+      await send('Requête de dessin en doublon ignorée.', 64);
       break;
     default:
-      await send('Failed to process draw command.', 64);
+      await send('Échec du traitement de la commande de dessin.', 64);
   }
 };
