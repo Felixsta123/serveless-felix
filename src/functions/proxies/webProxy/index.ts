@@ -73,10 +73,10 @@ const parseCookies = (cookieHeader: string | undefined): Record<string, string> 
 };
 
 const sessionCookie = (token: string, maxAgeSeconds: number): string =>
-  `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+  `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAgeSeconds}`;
 
 const clearSessionCookie = (): string =>
-  `${SESSION_COOKIE_NAME}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+  `${SESSION_COOKIE_NAME}=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`;
 
 const validateSession = async (
   req: Parameters<HttpFunction>[0],
