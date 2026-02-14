@@ -87,6 +87,8 @@ const chunkIdFor = (x: number, y: number): string => {
 };
 
 const pixelIdFor = (x: number, y: number): string => `${x}_${y}`;
+const toRoundId = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? value : null;
 
 export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
   const job = parseJob(event);
@@ -129,13 +131,22 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
       if (sessionState === 'paused') {
         return { status: 'paused' as const };
       }
+      const sessionRoundId = toRoundId(sessionSnap.data()?.roundId);
 
       const currentCount = (rateSnap.data()?.count as number | undefined) ?? 0;
       if (currentCount >= RATE_LIMIT_PER_MINUTE) {
         return { status: 'rate_limited' as const };
       }
 
-      const oldColor = pixelSnap.data()?.color as string | undefined;
+      const pixelData = pixelSnap.data() as
+        | { color?: unknown; roundId?: unknown }
+        | undefined;
+      const sameRoundAsCurrent =
+        !sessionRoundId || toRoundId(pixelData?.roundId) === sessionRoundId;
+      const oldColor =
+        sameRoundAsCurrent && typeof pixelData?.color === 'string'
+          ? pixelData.color
+          : undefined;
       const timestamp = Timestamp.now();
 
       tx.set(idempotencyRef, { createdAt: timestamp });
@@ -148,6 +159,7 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
           color: job.color,
           updatedAt: timestamp,
           authorId: job.userId,
+          ...(sessionRoundId ? { roundId: sessionRoundId } : {}),
         },
         { merge: true },
       );
@@ -162,18 +174,27 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
           y: job.y,
           newColor: job.color,
           oldColor: oldColor ?? null,
+          roundId: sessionRoundId,
         },
         { merge: true },
       );
 
       const activeData = activeSnap.data() as
-        | { minX?: number; minY?: number; maxX?: number; maxY?: number }
+        | {
+            minX?: number;
+            minY?: number;
+            maxX?: number;
+            maxY?: number;
+            roundId?: unknown;
+          }
         | undefined;
+      const isFreshRound =
+        Boolean(sessionRoundId) && toRoundId(activeData?.roundId) !== sessionRoundId;
       const next = {
-        minX: activeData?.minX ?? job.x,
-        minY: activeData?.minY ?? job.y,
-        maxX: activeData?.maxX ?? job.x,
-        maxY: activeData?.maxY ?? job.y,
+        minX: isFreshRound ? job.x : (activeData?.minX ?? job.x),
+        minY: isFreshRound ? job.y : (activeData?.minY ?? job.y),
+        maxX: isFreshRound ? job.x : (activeData?.maxX ?? job.x),
+        maxY: isFreshRound ? job.y : (activeData?.maxY ?? job.y),
       };
       tx.set(
         activeAreaRef,
@@ -183,6 +204,7 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
           maxX: Math.max(next.maxX, job.x),
           maxY: Math.max(next.maxY, job.y),
           updatedAt: timestamp,
+          ...(sessionRoundId ? { roundId: sessionRoundId } : {}),
         },
         { merge: true },
       );

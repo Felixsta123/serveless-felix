@@ -1,5 +1,6 @@
 import { CloudEvent } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
+import crypto from 'node:crypto';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { JobPayload } from '../../shared/queue.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
@@ -12,7 +13,9 @@ import {
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
+const activeAreaRef = firestore.doc('activeArea/current');
 const WEB_APP_URL = process.env.WEB_APP_URL ?? 'https://your-app.web.app';
+const makeRoundId = (): string => `round-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
 const extractMessageData = (event: CloudEvent<PubSubEnvelope>): string | null => {
   const data = event.data;
@@ -177,29 +180,57 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
   }
 
   const now = Timestamp.now();
-  const nextState =
-    job.action === 'start' ? 'running' : job.action === 'pause' ? 'paused' : 'reset';
+  const nextState = job.action === 'pause' ? 'paused' : 'running';
+  let newRoundId: string | null = null;
 
   try {
-    await sessionRef.set(
-      {
-        state: nextState,
-        updatedAt: now,
-        updatedBy: job.userId,
-        source: job.source,
-        ...(job.action === 'reset' ? { resetAt: now } : null),
-      },
-      { merge: true },
-    );
+    if (job.action === 'reset') {
+      newRoundId = makeRoundId();
+      await firestore.runTransaction(async (tx) => {
+        tx.set(
+          sessionRef,
+          {
+            state: nextState,
+            roundId: newRoundId,
+            updatedAt: now,
+            updatedBy: job.userId,
+            source: job.source,
+            resetAt: now,
+          },
+          { merge: true },
+        );
+        // Overwrite current active bounds so the next draw starts a fresh round area.
+        tx.set(activeAreaRef, {
+          roundId: newRoundId,
+          updatedAt: now,
+          updatedBy: job.userId,
+          source: job.source,
+        });
+      });
+    } else {
+      await sessionRef.set(
+        {
+          state: nextState,
+          updatedAt: now,
+          updatedBy: job.userId,
+          source: job.source,
+        },
+        { merge: true },
+      );
+    }
+
     await postDiscordFollowup(
       interaction.applicationId,
       interaction.token,
-      `Session updated: ${nextState}.`,
+      job.action === 'reset'
+        ? 'Session reset: started a fresh canvas round.'
+        : `Session updated: ${nextState}.`,
     );
     logInfo('worker_discord_session_updated', {
       ...context,
       action: job.action,
       nextState,
+      roundId: newRoundId,
       userId: job.userId,
     });
   } catch (error) {
@@ -207,6 +238,7 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       ...context,
       action: job.action,
       nextState,
+      roundId: newRoundId,
       userId: job.userId,
     });
     try {

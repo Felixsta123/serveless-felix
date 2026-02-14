@@ -40,6 +40,7 @@ type ActiveArea = {
   minY?: number;
   maxX?: number;
   maxY?: number;
+  roundId?: unknown;
 };
 
 type PixelRecord = {
@@ -53,6 +54,7 @@ type LoadedSnapshot = {
   minY: number;
   maxX: number;
   maxY: number;
+  roundId: string | null;
   pixels: PixelRecord[];
 };
 
@@ -80,6 +82,8 @@ const toInt = (value: unknown): number | null => {
   }
   return null;
 };
+const toRoundId = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? value : null;
 
 const clampInt = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, Math.floor(value)));
@@ -111,6 +115,7 @@ const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
   }
 
   const activeData = activeAreaSnap.data() as ActiveArea;
+  const roundId = toRoundId(activeData.roundId);
   const minX = toInt(activeData.minX);
   const minY = toInt(activeData.minY);
   const maxX = toInt(activeData.maxX);
@@ -134,16 +139,29 @@ const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
   }
 
   const chunkSnapshots = await Promise.all(
-    chunks.map(({ chunkId }) => firestore.collection(`chunks/${chunkId}/pixels`).get()),
+    chunks.map(({ chunkId }) => {
+      const pixelsCollection = firestore.collection(`chunks/${chunkId}/pixels`);
+      return roundId
+        ? pixelsCollection.where('roundId', '==', roundId).get()
+        : pixelsCollection.get();
+    }),
   );
 
   const dedup = new Map<string, PixelRecord>();
   for (const chunkSnap of chunkSnapshots) {
     for (const doc of chunkSnap.docs) {
-      const data = doc.data() as { x?: unknown; y?: unknown; color?: unknown };
+      const data = doc.data() as {
+        x?: unknown;
+        y?: unknown;
+        color?: unknown;
+        roundId?: unknown;
+      };
       const x = toInt(data.x);
       const y = toInt(data.y);
       if (x === null || y === null) {
+        continue;
+      }
+      if (roundId && toRoundId(data.roundId) !== roundId) {
         continue;
       }
       if (x < minX || x > maxX || y < minY || y > maxY) {
@@ -168,6 +186,7 @@ const loadSnapshotPixels = async (): Promise<LoadedSnapshot | null> => {
     minY,
     maxX,
     maxY,
+    roundId,
     pixels: Array.from(dedup.values()),
   };
 };
@@ -397,6 +416,7 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
     logInfo('worker_snapshot_completed', {
       ...context,
       userId: job.userId,
+      roundId: loaded.roundId,
       width: rendered.width,
       height: rendered.height,
       scale: rendered.scale,

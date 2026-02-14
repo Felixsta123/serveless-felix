@@ -4,6 +4,7 @@ import {
   collection,
   onSnapshot,
   query,
+  where,
   Unsubscribe,
   Timestamp,
 } from 'firebase/firestore';
@@ -17,6 +18,7 @@ type CanvasState = {
   offsetX: number;
   offsetY: number;
   selected: { x: number; y: number } | null;
+  activeRoundId: string | null;
 };
 
 const state: CanvasState = {
@@ -24,13 +26,51 @@ const state: CanvasState = {
   offsetX: 0,
   offsetY: 0,
   selected: null,
+  activeRoundId: null,
 };
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
-const subscriptions: Unsubscribe[] = [];
+const chunkSubscriptions: Unsubscribe[] = [];
+let activeAreaSubscription: Unsubscribe | null = null;
 
 const key = (x: number, y: number) => `${x}_${y}`;
+const toRoundId = (value: unknown): string | null =>
+  typeof value === 'string' && value ? value : null;
+const unsubscribeChunks = (): void => {
+  chunkSubscriptions.forEach((unsub) => unsub());
+  chunkSubscriptions.length = 0;
+};
+const applyRoundId = (nextRoundId: string | null): boolean => {
+  if (state.activeRoundId === nextRoundId) {
+    return false;
+  }
+  state.activeRoundId = nextRoundId;
+  state.pixels.clear();
+  return true;
+};
+const ensureActiveAreaSubscription = (): void => {
+  if (activeAreaSubscription) {
+    return;
+  }
+  activeAreaSubscription = onSnapshot(
+    doc(db, 'activeArea/current'),
+    (snapshot) => {
+      const nextRoundId = snapshot.exists() ? toRoundId(snapshot.data().roundId) : null;
+      if (!applyRoundId(nextRoundId)) {
+        return;
+      }
+      unsubscribeChunks();
+      subscribeVisible();
+      render();
+      window.dispatchEvent(new CustomEvent('canvasUpdated'));
+    },
+    (error) => {
+      console.error('Active area listener error:', error);
+      window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: error.message } }));
+    }
+  );
+};
 
 // Initialize canvas element
 export const initCanvas = (el: HTMLCanvasElement): void => {
@@ -49,7 +89,7 @@ export const getState = () => state;
 export const setOffset = (x: number, y: number, resubscribe = true): void => {
   state.offsetX = x;
   state.offsetY = y;
-  unsubscribeAll();
+  unsubscribeChunks();
   if (resubscribe) {
     subscribeVisible();
   }
@@ -67,17 +107,21 @@ export const getActiveArea = async (): Promise<{
   minY: number;
   maxX: number;
   maxY: number;
+  roundId: string | null;
 }> => {
   const snap = await getDoc(doc(db, 'activeArea/current'));
   if (!snap.exists()) {
-    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    applyRoundId(null);
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0, roundId: null };
   }
   const data = snap.data();
+  applyRoundId(toRoundId(data.roundId));
   return {
     minX: data.minX ?? 0,
     minY: data.minY ?? 0,
     maxX: data.maxX ?? 0,
     maxY: data.maxY ?? 0,
+    roundId: state.activeRoundId,
   };
 };
 
@@ -173,12 +217,16 @@ const getVisibleChunks = (): Array<{ cx: number; cy: number }> => {
 
 // Subscribe to visible chunks (real-time Firestore)
 export const subscribeVisible = (): void => {
+  ensureActiveAreaSubscription();
+  unsubscribeChunks();
   const chunks = getVisibleChunks();
 
   for (const { cx, cy } of chunks) {
     const chunkId = `${cx}_${cy}`;
     const pixelsRef = collection(db, `chunks/${chunkId}/pixels`);
-    const q = query(pixelsRef);
+    const q = state.activeRoundId
+      ? query(pixelsRef, where('roundId', '==', state.activeRoundId))
+      : query(pixelsRef);
 
     const unsub = onSnapshot(
       q,
@@ -210,12 +258,15 @@ export const subscribeVisible = (): void => {
       }
     );
 
-    subscriptions.push(unsub);
+    chunkSubscriptions.push(unsub);
   }
 };
 
 // Unsubscribe all
 export const unsubscribeAll = (): void => {
-  subscriptions.forEach((unsub) => unsub());
-  subscriptions.length = 0;
+  unsubscribeChunks();
+  if (activeAreaSubscription) {
+    activeAreaSubscription();
+    activeAreaSubscription = null;
+  }
 };
