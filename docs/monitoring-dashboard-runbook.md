@@ -1,6 +1,6 @@
-# Monitoring Dashboard Runbook
+# Monitoring Runbook
 
-This project now provisions a Cloud Monitoring dashboard as code, aligned with the subject and teacher observability requirements.
+This project now provisions Cloud Monitoring dashboard + alert policies as code, aligned with the subject and teacher observability requirements.
 
 ## What is deployed
 
@@ -28,21 +28,27 @@ From repository root:
 ```bash
 npm run deploy:dev:monitoring
 npm run deploy:prd:monitoring
+npm run deploy:dev:alerts
+npm run deploy:prd:alerts
 ```
 
-The command creates or updates the dashboard based on display name.
+These commands create or update monitoring resources based on display names.
 
 Required IAM role for the deploying identity:
 - `roles/monitoring.dashboardEditor`
+- `roles/monitoring.alertPolicyEditor`
 
 ## Files
 
 - Template: `monitoring/dashboard.core.template.json`
 - Rendered per env: `monitoring/dashboard.<env>.json`
 - Deploy script: `scripts/deploy-monitoring.mjs`
+- Template: `monitoring/alert-policies.core.template.json`
+- Rendered per env: `monitoring/alert-policies.<env>.json`
+- Deploy script: `scripts/deploy-alerts.mjs`
 
-## Next required step (still pending)
+## Alert policies deployed
 
-Add alert policies (not included in this runbook yet), for example:
-- 5xx error spike on Cloud Run services
-- Pub/Sub backlog age/depth thresholds
+- Cloud Run 5xx spike (rate-based)
+- Pub/Sub backlog depth (undelivered messages)
+- Pub/Sub oldest unacked message age

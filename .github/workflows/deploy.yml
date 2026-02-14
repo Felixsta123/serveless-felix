@@ -58,6 +58,7 @@ jobs:
             monitoring:
               - 'monitoring/**'
               - 'scripts/deploy-monitoring.mjs'
+              - 'scripts/deploy-alerts.mjs'
             web:
               - 'web/**'
 
@@ -155,6 +156,10 @@ jobs:
         if: github.ref == 'refs/heads/dev' && steps.plan.outputs.monitoring_changed == 'true'
         run: npm run deploy:dev:monitoring
 
+      - name: Deploy Monitoring Alerts (Dev)
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.monitoring_changed == 'true'
+        run: npm run deploy:dev:alerts
+
       - name: Build Web App (Dev)
         if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
         run: |
@@ -181,6 +186,10 @@ jobs:
       - name: Deploy Monitoring Dashboard (Prod)
         if: github.ref == 'refs/heads/main' && steps.plan.outputs.monitoring_changed == 'true'
         run: npm run deploy:prd:monitoring
+
+      - name: Deploy Monitoring Alerts (Prod)
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.monitoring_changed == 'true'
+        run: npm run deploy:prd:alerts
 
       - name: Build Web App (Prod)
         if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'

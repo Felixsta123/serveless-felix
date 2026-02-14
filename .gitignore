@@ -10,6 +10,8 @@ dist
 secrets.yml
 monitoring/dashboard.dev.json
 monitoring/dashboard.prd.json
+monitoring/alert-policies.dev.json
+monitoring/alert-policies.prd.json
 gateway/openapi.dev.yaml
 gateway/openapi.prd.yaml
 functions/

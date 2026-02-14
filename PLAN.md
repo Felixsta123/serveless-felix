@@ -48,8 +48,9 @@ All public traffic goes through API Gateway -> proxy functions -> Pub/Sub -> wor
 
 ### 3.3 Missing deliverables against subject/defense
 - Monitoring deliverables:
-  - Cloud Monitoring dashboard-as-code implemented (`monitoring/dashboard.core.template.json`) and deploy script added (`scripts/deploy-monitoring.mjs`).
-  - No alert policies yet.
+  - Cloud Monitoring dashboard + alert policies as code implemented (`monitoring/dashboard.core.template.json`, `monitoring/alert-policies.core.template.json`) with deploy scripts (`scripts/deploy-monitoring.mjs`, `scripts/deploy-alerts.mjs`).
+  - Deployed in dev; prd deployment still pending.
+  - Notification channels/escalation routing not configured yet.
   - Correlation-ID/tracing pattern not standardized across all functions.
 - Documentation deliverables:
   - Missing project README/setup guide.
@@ -119,8 +120,8 @@ Legacy (cleanup planned)
 
 2. Observability and defense evidence
    - Standardize structured logs with correlation IDs across proxy -> worker flow.
-   - Create Cloud Monitoring dashboards (errors, latency, Pub/Sub backlog, worker throughput).
-   - Add alert policies (errors, backlog age/depth, processing failures).
+   - Configure notification channels and tune alert thresholds for errors/backlog/age.
+   - Deploy monitoring dashboard + alerts to prd and capture evidence/screenshots for defense.
 
 3. Documentation deliverables
    - Add `README.md` with setup/deploy/run/verify flow.

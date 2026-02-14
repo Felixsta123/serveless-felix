@@ -48,6 +48,11 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
     --role="roles/monitoring.dashboardEditor"
 
+# Cloud Monitoring Alert Policy Editor (for monitoring alert deploys)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/monitoring.alertPolicyEditor"
+
 # Cloud Run Admin (REQUIRED for Gen 2 functions as they run on Cloud Run)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
