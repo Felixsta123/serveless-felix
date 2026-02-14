@@ -69,16 +69,16 @@ const updateAuthUI = (user: User | null): void => {
 
 // Update pixel info display
 const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
-  coordsEl.textContent = `Position: (${x}, ${y})`;
+  coordsEl.textContent = `Position : (${x}, ${y})`;
 
   if (pixel) {
-    authorEl.textContent = `Author: ${pixel.authorId}`;
+    authorEl.textContent = `Auteur : ${pixel.authorId}`;
     updatedEl.textContent = pixel.updatedAt
-      ? `Updated: ${new Date(pixel.updatedAt).toLocaleString()}`
-      : 'Updated: Unknown';
+      ? `Mis à jour : ${new Date(pixel.updatedAt).toLocaleString('fr-FR')}`
+      : 'Mis à jour : Inconnue';
     colorPicker.value = pixel.color;
   } else {
-    authorEl.textContent = 'Author: (empty)';
+    authorEl.textContent = 'Auteur : (vide)';
     updatedEl.textContent = '';
   }
 
@@ -95,7 +95,7 @@ const setStatus = (msg: string, type: 'info' | 'error' | 'success' = 'info'): vo
 
 const updateViewportInfo = (): void => {
   const { offsetX, offsetY } = getState();
-  viewportEl.textContent = `View origin: (${offsetX}, ${offsetY})`;
+  viewportEl.textContent = `Origine : (${offsetX}, ${offsetY})`;
 };
 
 // Handle draw button click
@@ -105,13 +105,13 @@ const handleDraw = async (): Promise<void> => {
 
   const color = colorPicker.value;
   drawBtn.disabled = true;
-  setStatus('Drawing...');
+  setStatus('Dessin en cours...');
 
   try {
     await drawPixel(selected.x, selected.y, color);
-    setStatus('Pixel drawn!', 'success');
+    setStatus('Pixel dessiné', 'success');
   } catch (err) {
-    setStatus(`Error: ${err instanceof Error ? err.message : 'Unknown'}`, 'error');
+    setStatus(`Erreur : ${err instanceof Error ? err.message : 'Inconnue'}`, 'error');
   } finally {
     if (currentUser) {
       drawBtn.disabled = false;
@@ -125,7 +125,7 @@ const handleOAuthCallback = async (): Promise<boolean> => {
   const state = params.get('oauth_state');
   if (!state) return false;
 
-  setStatus('Completing login...');
+  setStatus('Connexion en cours...');
 
   const result = await pollSession(state);
   if (result) {
@@ -139,13 +139,13 @@ const handleOAuthCallback = async (): Promise<boolean> => {
     } catch (error) {
       console.error('Failed to complete session setup', error);
       clearSession();
-      setStatus('Login failed', 'error');
+      setStatus('Échec de connexion', 'error');
       window.history.replaceState({}, '', window.location.pathname);
       return false;
     }
   }
 
-  setStatus('Login failed', 'error');
+  setStatus('Échec de connexion', 'error');
   window.history.replaceState({}, '', window.location.pathname);
   return false;
 };
@@ -172,7 +172,7 @@ const init = async (): Promise<void> => {
 
   if (!currentUser) {
     setOffset(0, 0, false);
-    setStatus('Login required to access the canvas');
+    setStatus('Connexion requise');
   } else {
     // Get active area and center view
     try {
@@ -180,10 +180,10 @@ const init = async (): Promise<void> => {
       const offsetX = getInitialOffset(area.minX, area.maxX);
       const offsetY = getInitialOffset(area.minY, area.maxY);
       setOffset(offsetX, offsetY);
-      setStatus('Connected', 'success');
+      setStatus('Connecté', 'success');
     } catch {
       setOffset(0, 0);
-      setStatus('Connected (new canvas)', 'success');
+      setStatus('Connecté (nouveau canvas)', 'success');
     }
   }
 
@@ -194,7 +194,7 @@ const init = async (): Promise<void> => {
     clearSession();
     updateAuthUI(null);
     unsubscribeAll();
-    setStatus('Logged out');
+    setStatus('Déconnecté');
   });
 
   drawBtn.addEventListener('click', handleDraw);
@@ -220,12 +220,12 @@ const init = async (): Promise<void> => {
   updateViewportInfo();
 
   window.addEventListener('canvasError', ((e: CustomEvent) => {
-    setStatus(`Canvas error: ${e.detail.error}`, 'error');
+    setStatus(`Erreur canvas : ${e.detail.error}`, 'error');
   }) as EventListener);
 };
 
 // Start
 init().catch((err) => {
   console.error('Init failed:', err);
-  setStatus('Failed to initialize', 'error');
+  setStatus("Échec d'initialisation", 'error');
 });

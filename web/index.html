@@ -1,50 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pixel Canvas</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <title>Canvas Pixel</title>
   </head>
   <body>
-    <div id="app">
-      <header>
-        <h1>🎨 Pixel Canvas</h1>
-        <div id="auth-section">
-          <button id="login-btn" class="btn btn-primary">Login with Discord</button>
-          <div id="user-info" style="display: none;">
-            <img id="user-avatar" alt="avatar" />
-            <span id="user-name"></span>
-            <button id="logout-btn" class="btn btn-secondary">Logout</button>
-          </div>
+    <div class="app">
+      <aside class="sidebar">
+        <button id="login-btn" class="button button-primary" type="button">
+          <span class="button-content">
+            <svg
+              class="discord-icon"
+              viewBox="0 0 127.14 96.36"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0a105.89 105.89 0 0 0-26.25 8.08C2.79 32.65-1.71 56.6.54 80.21h0a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.27 68.42 68.42 0 0 1-10.85-5.18c.91-.67 1.8-1.36 2.66-2.08a75.57 75.57 0 0 0 64.32 0c.87.72 1.76 1.42 2.66 2.08a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.26A105.25 105.25 0 0 0 126.6 80.2c2.64-27.35-4.5-51.08-18.9-72.13ZM42.45 65.69C36.18 65.69 31 60 31 53s5-12.74 11.47-12.74S54 46 53.92 53s-5.03 12.7-11.47 12.7Zm42.24 0c-6.27 0-11.47-5.7-11.47-12.74s5-12.74 11.47-12.74S96.15 46 96.15 53s-5.03 12.7-11.46 12.7Z"
+              />
+            </svg>
+            Se connecter avec Discord
+          </span>
+        </button>
+
+        <div id="user-info" class="user-info">
+          <img id="user-avatar" alt="Avatar utilisateur" />
+          <span id="user-name"></span>
+          <button id="logout-btn" class="button" type="button">Se déconnecter</button>
         </div>
-      </header>
 
-      <main>
-        <div id="canvas-wrapper">
-          <canvas id="canvas"></canvas>
-        </div>
+        <section class="panel">
+          <p id="viewport">Origine : (0, 0)</p>
+          <p id="coords">Position : (-, -)</p>
+          <p id="author">Auteur : (vide)</p>
+          <p id="updated"></p>
+        </section>
 
-        <aside id="sidebar">
-          <section id="pixel-info">
-            <h3>Pixel Info</h3>
-            <p id="coords">Click on canvas to select</p>
-            <p id="author"></p>
-            <p id="updated"></p>
-          </section>
+        <section class="controls">
+          <label for="color-picker">Couleur</label>
+          <input id="color-picker" type="color" value="#ffffff" />
+          <button id="draw-btn" class="button button-primary" type="button" disabled>Dessiner</button>
+        </section>
 
-          <section id="draw-section">
-            <h3>Draw</h3>
-            <input type="color" id="color-picker" value="#ff0000" />
-            <button id="draw-btn" class="btn btn-primary" disabled>Draw Pixel</button>
-          </section>
+        <p id="status" aria-live="polite">Connectez-vous pour dessiner.</p>
+      </aside>
 
-          <section id="status-section">
-            <p id="status">Connecting...</p>
-            <p id="viewport">View origin: (0, 0)</p>
-            <p id="nav-help">Pan: Shift+Drag / Middle Mouse / Wheel / Arrow Keys</p>
-          </section>
-        </aside>
+      <main class="canvas-area">
+        <canvas id="canvas" aria-label="Pixel canvas"></canvas>
       </main>
     </div>
 

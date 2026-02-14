@@ -33,6 +33,9 @@ let panStartOffsetY = 0;
 const POLL_INTERVAL_MS = 1000;
 const DRAG_THRESHOLD_PX = 3;
 const KEY_PAN_STEP = 5;
+const CANVAS_BG_COLOR = '#09090b';
+const GRID_COLOR = '#27272a';
+const SELECTION_COLOR = '#fafafa';
 
 const key = (x: number, y: number) => `${x}_${y}`;
 
@@ -248,10 +251,10 @@ const handleKeyDown = (event: KeyboardEvent): void => {
 const render = (): void => {
   if (!ctx || !canvas) return;
 
-  ctx.fillStyle = '#1a1a2e';
+  ctx.fillStyle = CANVAS_BG_COLOR;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.strokeStyle = '#333';
+  ctx.strokeStyle = GRID_COLOR;
   ctx.lineWidth = 0.5;
   const viewPixels = config.canvasSize / config.pixelSize;
   for (let i = 0; i <= viewPixels; i++) {
@@ -280,7 +283,7 @@ const render = (): void => {
     const selX = (state.selected.x - state.offsetX) * config.pixelSize;
     const selY = (state.selected.y - state.offsetY) * config.pixelSize;
     if (selX >= 0 && selX < canvas.width && selY >= 0 && selY < canvas.height) {
-      ctx.strokeStyle = '#fff';
+      ctx.strokeStyle = SELECTION_COLOR;
       ctx.lineWidth = 2;
       ctx.strokeRect(selX, selY, config.pixelSize, config.pixelSize);
     }
