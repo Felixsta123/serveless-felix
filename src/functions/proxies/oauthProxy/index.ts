@@ -8,6 +8,7 @@ import {
   logWarn,
 } from '../../shared/observability.js';
 import { isHexState } from '../../shared/validation.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '';
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI ?? '';
@@ -26,7 +27,15 @@ const buildDiscordAuthUrl = (state: string): string => {
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 };
 
-export const oauthProxy: HttpFunction = async (req, res) => {
+export const oauthProxy: HttpFunction = async (req, res) =>
+  runWithSpan(
+    'oauthProxy.http',
+    {
+      'faas.trigger': 'http',
+      'http.method': req.method,
+      'http.route': req.path ?? '/oauth',
+    },
+    async () => {
   const requestContext = getHttpRequestContext(req);
 
   if (!WEB_APP_URL) {
@@ -156,4 +165,5 @@ export const oauthProxy: HttpFunction = async (req, res) => {
   res.status(400).json({
     error: 'Invalid request. Use ?action=login to start OAuth flow.',
   });
-};
+    },
+  );

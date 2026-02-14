@@ -14,6 +14,7 @@ import { parseJob } from '../../shared/pubsubJob.js';
 import { toPositiveInt } from '../../shared/env.js';
 import { toChunkRange } from '../../shared/canvasMath.js';
 import { parseIntStrict, toRoundId } from '../../shared/validation.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 const firestore = new Firestore();
 const storage = new Storage();
@@ -250,7 +251,16 @@ const uploadSnapshot = async (
   return { url };
 };
 
-export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
+export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) =>
+  runWithSpan(
+    'workerSnapshot.pubsub',
+    {
+      'faas.trigger': 'pubsub',
+      'messaging.system': 'pubsub',
+      'messaging.destination': 'jobs',
+      'messaging.operation': 'process',
+    },
+    async () => {
   const job = parseJob(
     event,
     'worker_snapshot_parse_failed',
@@ -358,4 +368,5 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
       });
     }
   }
-};
+    },
+  );

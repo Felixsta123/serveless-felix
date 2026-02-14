@@ -10,6 +10,7 @@ import {
   logInfo,
 } from '../../shared/observability.js';
 import { parseJob } from '../../shared/pubsubJob.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 const firestore = new Firestore();
 
@@ -104,7 +105,16 @@ const fetchDiscordUser = async (accessToken: string): Promise<DiscordUser> => {
 
 const generateSessionToken = (): string => crypto.randomBytes(32).toString('hex');
 
-export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
+export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) =>
+  runWithSpan(
+    'workerOAuth.pubsub',
+    {
+      'faas.trigger': 'pubsub',
+      'messaging.system': 'pubsub',
+      'messaging.destination': 'jobs',
+      'messaging.operation': 'process',
+    },
+    async () => {
   const job = parseJob(
     event,
     'worker_oauth_parse_failed',
@@ -195,4 +205,5 @@ export const workerOAuth = async (event: CloudEvent<PubSubEnvelope>) => {
       });
     }
   }
-};
+    },
+  );

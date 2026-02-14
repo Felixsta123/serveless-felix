@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import type { CloudEvent, HttpFunction } from '@google-cloud/functions-framework';
+import { trace } from '@opentelemetry/api';
+import { currentTraceId } from './tracing.js';
 
 type HttpRequest = Parameters<HttpFunction>[0];
 
@@ -68,7 +70,7 @@ export const getHttpRequestContext = (
     normalizeId(getHeader(req, 'x-client-request-id')) ??
     correlationId;
 
-  const traceId = parseGoogleTraceId(getHeader(req, TRACE_HEADER));
+  const traceId = parseGoogleTraceId(getHeader(req, TRACE_HEADER)) ?? currentTraceId();
 
   return { correlationId, requestId, traceId };
 };
@@ -84,7 +86,7 @@ export const getWorkerContext = (
     crypto.randomUUID();
 
   const requestId = normalizeId(job?.requestId) ?? normalizeId(event.id) ?? correlationId;
-  const traceId = normalizeId(job?.traceId, 64);
+  const traceId = normalizeId(job?.traceId, 64) ?? currentTraceId();
 
   return { correlationId, requestId, traceId };
 };
@@ -107,11 +109,28 @@ const emitLog = (
   eventName: string,
   fields: Record<string, unknown> = {},
 ): void => {
+  const activeSpanContext = trace.getActiveSpan()?.spanContext();
+  const activeTraceId = activeSpanContext?.traceId;
+  const activeSpanId = activeSpanContext?.spanId;
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GCLOUD_PROJECT;
+
+  const traceField =
+    typeof fields.traceId === 'string' && fields.traceId
+      ? fields.traceId
+      : activeTraceId;
+
   console.log(
     JSON.stringify({
       severity,
       event: eventName,
       timestamp: new Date().toISOString(),
+      ...(traceField && projectId
+        ? { 'logging.googleapis.com/trace': `projects/${projectId}/traces/${traceField}` }
+        : {}),
+      ...(activeSpanId ? { 'logging.googleapis.com/spanId': activeSpanId } : {}),
+      ...(activeSpanContext?.traceFlags !== undefined
+        ? { 'logging.googleapis.com/trace_sampled': activeSpanContext.traceFlags === 1 }
+        : {}),
       ...fields,
     }),
   );

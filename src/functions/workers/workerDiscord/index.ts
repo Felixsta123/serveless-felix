@@ -10,6 +10,7 @@ import {
   logWarn,
 } from '../../shared/observability.js';
 import { parseJob } from '../../shared/pubsubJob.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
@@ -17,7 +18,16 @@ const activeAreaRef = firestore.doc('activeArea/current');
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
 const makeRoundId = (): string => `round-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
-export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
+export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) =>
+  runWithSpan(
+    'workerDiscord.pubsub',
+    {
+      'faas.trigger': 'pubsub',
+      'messaging.system': 'pubsub',
+      'messaging.destination': 'jobs',
+      'messaging.operation': 'process',
+    },
+    async () => {
   const job = parseJob(
     event,
     'worker_discord_parse_failed',
@@ -209,4 +219,5 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) => {
       });
     }
   }
-};
+    },
+  );

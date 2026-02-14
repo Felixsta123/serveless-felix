@@ -14,6 +14,7 @@ import {
   logWarn,
 } from '../../shared/observability.js';
 import { normalizeHexColor, parseIntStrict } from '../../shared/validation.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 type DiscordOption = {
   name?: string;
@@ -47,7 +48,15 @@ const getOptionValue = (options: unknown[] | undefined, name: string): unknown =
   return undefined;
 };
 
-export const discordProxy: HttpFunction = async (req, res) => {
+export const discordProxy: HttpFunction = async (req, res) =>
+  runWithSpan(
+    'discordProxy.http',
+    {
+      'faas.trigger': 'http',
+      'http.method': req.method,
+      'http.route': req.path ?? '/discord',
+    },
+    async () => {
   const requestContext = getHttpRequestContext(req);
 
   if (req.method !== 'POST') {
@@ -249,4 +258,5 @@ export const discordProxy: HttpFunction = async (req, res) => {
       flags: 64,
     },
   });
-};
+    },
+  );

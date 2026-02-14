@@ -10,6 +10,7 @@ import {
 import { parseJob } from '../../shared/pubsubJob.js';
 import { chunkIdFor } from '../../shared/canvasMath.js';
 import { toRoundId } from '../../shared/validation.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 const firestore = new Firestore();
 const sessionRef = firestore.doc('config/session');
@@ -29,7 +30,16 @@ const toMinuteKey = (date: Date): string => {
 
 const pixelIdFor = (x: number, y: number): string => `${x}_${y}`;
 
-export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
+export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) =>
+  runWithSpan(
+    'workerDraw.pubsub',
+    {
+      'faas.trigger': 'pubsub',
+      'messaging.system': 'pubsub',
+      'messaging.destination': 'jobs',
+      'messaging.operation': 'process',
+    },
+    async () => {
   const job = parseJob(
     event,
     'worker_draw_parse_failed',
@@ -210,4 +220,5 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) => {
     default:
       await send('Échec du traitement de la commande de dessin.', 64);
   }
-};
+    },
+  );

@@ -15,6 +15,7 @@ import {
   parsePositiveInt,
 } from '../../shared/validation.js';
 import { toChunkRange } from '../../shared/canvasMath.js';
+import { runWithSpan } from '../../shared/tracing.js';
 
 const firestore = new Firestore();
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
@@ -145,7 +146,15 @@ const toTimestampIso = (value: unknown): string | null => {
   return null;
 };
 
-export const webProxy: HttpFunction = async (req, res) => {
+export const webProxy: HttpFunction = async (req, res) =>
+  runWithSpan(
+    'webProxy.http',
+    {
+      'faas.trigger': 'http',
+      'http.method': req.method,
+      'http.route': req.path ?? '/web',
+    },
+    async () => {
   const requestContext = getHttpRequestContext(req);
 
   if (!WEB_APP_URL) {
@@ -482,4 +491,5 @@ export const webProxy: HttpFunction = async (req, res) => {
     method: req.method,
   });
   res.status(404).json({ error: 'Not found' });
-};
+    },
+  );
