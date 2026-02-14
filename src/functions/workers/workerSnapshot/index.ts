@@ -401,9 +401,9 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) => {
       job.interaction.token,
       {
         content: [
-          `Snapshot du round ${loaded.roundId ?? 'inconnu'} (${loaded.minX},${loaded.minY} - ${loaded.maxX},${loaded.maxY})`,
+          `Snapshot de (${loaded.minX}, ${loaded.minY} à ${loaded.maxX}, ${loaded.maxY})`,
           `${rendered.width}x${rendered.height}px`,
-          `Pixels : ${loaded.pixels.length}`,
+          `${loaded.pixels.length} pixels dessinés`,
         ].join('\n'),
         embeds: [
           {
