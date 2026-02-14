@@ -4,7 +4,6 @@
 - [x] Initialized `package.json` with dependencies.
 - [x] Created `tsconfig.json` for TypeScript support.
 - [x] Installed dependencies.
-- [x] Implemented Hello World function (in `index.ts` -> `src/index.ts`).
 - [x] Configured deployment scripts (switched from `serverless.yml` to `gcloud` CLI via `deploy.mjs`).
 - [x] Setup GitHub Actions for CI/CD.
 - [x] Configured Google Cloud Service Account & Permissions.

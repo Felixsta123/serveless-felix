@@ -18,7 +18,7 @@ Build a fully serverless, event-driven pixel canvas (r/place style) with Discord
 - Firebase Hosting/Auth is allowed for the SPA if needed.
 
 ## Current implementation status (keep updated when you change it)
-- Implemented: API Gateway template, deployment scripts, `discordProxy`, `webProxy`, `oauthProxy`, `workerDraw`, `workerDiscord`, `workerOAuth`, `workerSnapshot`, `hello`.
+- Implemented: API Gateway template, deployment scripts, `discordProxy`, `webProxy`, `oauthProxy`, `workerDraw`, `workerDiscord`, `workerOAuth`, `workerSnapshot`.
 - Implemented: Web SPA (Vite + TypeScript + Firebase) with Discord OAuth2, real-time Firestore canvas, and authenticated pixel drawing.
 - Implemented: Snapshot pipeline in `workerSnapshot` (render canvas PNG from Firestore chunks -> upload to GCS snapshots bucket -> Discord follow-up with embedded image; no long URL in message text).
 - Hardened: deploy scripts enforce `--no-allow-unauthenticated`, dedicated `proxy-sa`/`worker-sa`, Secret Manager bindings for OAuth/Discord secrets, and gateway invoker lockdown.

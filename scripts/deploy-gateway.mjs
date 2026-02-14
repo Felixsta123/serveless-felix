@@ -45,7 +45,7 @@ const runOptional = (args, options = {}) => {
 const exists = (args) => spawnSync('gcloud', args, { stdio: 'ignore' }).status === 0;
 
 const proxyFunctions = ['discordProxy', 'webProxy', 'oauthProxy'];
-const lockDownFunctions = [...proxyFunctions, 'hello'];
+const lockDownFunctions = [...proxyFunctions];
 
 if (
   !exists(['iam', 'service-accounts', 'describe', serviceAccount, '--project', projectId])

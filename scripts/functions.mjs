@@ -1,8 +1,4 @@
 export const functions = {
-  hello: {
-    trigger: 'http',
-    serviceAccount: 'proxy',
-  },
   discordProxy: {
     trigger: 'http',
     serviceAccount: 'proxy',

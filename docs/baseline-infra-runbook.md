@@ -189,15 +189,6 @@ for fn in discordProxy webProxy oauthProxy; do
     --role "roles/run.invoker" || true
   done
 
-gcloud functions remove-invoker-policy-binding hello \
-  --gen2 \
-  --region "$REGION" \
-  --member "allUsers" || true
-
-gcloud run services remove-iam-policy-binding hello \
-  --region "$REGION" \
-  --member "allUsers" \
-  --role "roles/run.invoker" || true
 ```
 
 Verify no public invoker:

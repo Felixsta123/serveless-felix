@@ -7,7 +7,6 @@
   "scripts": {
     "build": "tsc",
     "gcp-build": "tsc",
-    "dev:hello": "node scripts/dev.mjs hello",
     "dev:discordProxy": "node scripts/dev.mjs discordProxy",
     "dev:webProxy": "node scripts/dev.mjs webProxy",
     "dev:oauthProxy": "node scripts/dev.mjs oauthProxy",
@@ -19,7 +18,6 @@
     "deploy:dev:gateway": "node scripts/deploy-gateway.mjs dev",
     "deploy:prd": "node scripts/deploy.mjs prd",
     "deploy:prd:gateway": "node scripts/deploy-gateway.mjs prd",
-    "deploy:dev:hello": "node scripts/deploy.mjs dev hello",
     "deploy:dev:discordProxy": "node scripts/deploy.mjs dev discordProxy",
     "deploy:dev:webProxy": "node scripts/deploy.mjs dev webProxy",
     "deploy:dev:oauthProxy": "node scripts/deploy.mjs dev oauthProxy",
@@ -28,7 +26,6 @@
     "deploy:dev:workerDiscord": "node scripts/deploy.mjs dev workerDiscord",
     "deploy:dev:workerOAuth": "node scripts/deploy.mjs dev workerOAuth",
     "discord:commands": "node scripts/register-commands.mjs",
-    "deploy:prd:hello": "node scripts/deploy.mjs prd hello",
     "deploy:prd:discordProxy": "node scripts/deploy.mjs prd discordProxy",
     "deploy:prd:webProxy": "node scripts/deploy.mjs prd webProxy",
     "deploy:prd:oauthProxy": "node scripts/deploy.mjs prd oauthProxy",

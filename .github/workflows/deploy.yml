@@ -20,16 +20,85 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed deploy targets
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            all_functions:
+              - 'src/functions/shared/**'
+              - 'src/index.ts'
+              - 'scripts/deploy.mjs'
+              - 'scripts/functions.mjs'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - '.gcloudignore'
+            discord_proxy:
+              - 'src/functions/proxies/discordProxy/**'
+            web_proxy:
+              - 'src/functions/proxies/webProxy/**'
+            oauth_proxy:
+              - 'src/functions/proxies/oauthProxy/**'
+            worker_draw:
+              - 'src/functions/workers/workerDraw/**'
+            worker_snapshot:
+              - 'src/functions/workers/workerSnapshot/**'
+            worker_discord:
+              - 'src/functions/workers/workerDiscord/**'
+            worker_oauth:
+              - 'src/functions/workers/workerOAuth/**'
+            gateway:
+              - 'gateway/**'
+              - 'scripts/deploy-gateway.mjs'
+            web:
+              - 'web/**'
+
+      - name: Build deploy plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          functions=()
+
+          if [[ "${{ steps.changes.outputs.all_functions }}" == "true" ]]; then
+            functions=(discordProxy webProxy oauthProxy workerDraw workerSnapshot workerDiscord workerOAuth)
+          else
+            [[ "${{ steps.changes.outputs.discord_proxy }}" == "true" ]] && functions+=(discordProxy)
+            [[ "${{ steps.changes.outputs.web_proxy }}" == "true" ]] && functions+=(webProxy)
+            [[ "${{ steps.changes.outputs.oauth_proxy }}" == "true" ]] && functions+=(oauthProxy)
+            [[ "${{ steps.changes.outputs.worker_draw }}" == "true" ]] && functions+=(workerDraw)
+            [[ "${{ steps.changes.outputs.worker_snapshot }}" == "true" ]] && functions+=(workerSnapshot)
+            [[ "${{ steps.changes.outputs.worker_discord }}" == "true" ]] && functions+=(workerDiscord)
+            [[ "${{ steps.changes.outputs.worker_oauth }}" == "true" ]] && functions+=(workerOAuth)
+          fi
+
+          if (( ${#functions[@]} > 0 )); then
+            echo "has_functions=true" >> "$GITHUB_OUTPUT"
+            echo "functions=${functions[*]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_functions=false" >> "$GITHUB_OUTPUT"
+            echo "functions=" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "gateway_changed=${{ steps.changes.outputs.gateway }}" >> "$GITHUB_OUTPUT"
+          echo "web_changed=${{ steps.changes.outputs.web }}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install backend dependencies
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true'
         run: npm ci
 
       - name: Authenticate to Google Cloud
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
@@ -37,20 +106,51 @@ jobs:
           export_environment_variables: true
 
       - name: Set GCP Keyfile Path
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         run: echo "GCP_KEYFILE_PATH=${{ env.GOOGLE_APPLICATION_CREDENTIALS }}" >> $GITHUB_ENV
 
-      - name: Deploy to Dev
-        if: github.ref == 'refs/heads/dev'
-        run: npm run deploy:dev
+      - name: Deploy changed functions to Dev
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.has_functions == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fn in ${{ steps.plan.outputs.functions }}; do
+            node scripts/deploy.mjs dev "$fn"
+          done
 
       - name: Deploy API Gateway (Dev)
-        if: github.ref == 'refs/heads/dev'
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.gateway_changed == 'true'
         run: npm run deploy:dev:gateway
 
-      - name: Deploy to Prod
-        if: github.ref == 'refs/heads/main'
-        run: npm run deploy:prd
+      - name: Build Web App (Dev)
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+
+      - name: Deploy Web App (Dev)
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
+        run: npx --yes firebase-tools deploy --project serverless-felix-dev --only hosting --config web/firebase.json --non-interactive
+
+      - name: Deploy changed functions to Prod
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.has_functions == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fn in ${{ steps.plan.outputs.functions }}; do
+            node scripts/deploy.mjs prd "$fn"
+          done
 
       - name: Deploy API Gateway (Prod)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.gateway_changed == 'true'
         run: npm run deploy:prd:gateway
+
+      - name: Build Web App (Prod)
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+
+      - name: Deploy Web App (Prod)
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'
+        run: npx --yes firebase-tools deploy --project serverless-felix-prd --only hosting --config web/firebase.json --non-interactive
