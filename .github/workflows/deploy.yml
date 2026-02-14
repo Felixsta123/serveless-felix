@@ -31,8 +31,6 @@ jobs:
             shared_functions:
               - 'src/functions/shared/**'
               - 'src/index.ts'
-              - 'scripts/deploy.mjs'
-              - 'scripts/functions.mjs'
             backend_dependencies:
               - 'package.json'
               - 'package-lock.json'
