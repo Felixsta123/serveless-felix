@@ -1,0 +1,197 @@
+{
+  "displayName": "Serverless Felix - Core Ops ({{ENV}})",
+  "mosaicLayout": {
+    "columns": 48,
+    "tiles": [
+      {
+        "xPos": 0,
+        "yPos": 0,
+        "width": 24,
+        "height": 8,
+        "widget": {
+          "title": "Cloud Run Request Rate (req/s)",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "legendTemplate": "${resource.labels.service_name}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" (resource.labels.service_name=\"discordproxy\" OR resource.labels.service_name=\"webproxy\" OR resource.labels.service_name=\"oauthproxy\" OR resource.labels.service_name=\"workerdraw\" OR resource.labels.service_name=\"workerdiscord\" OR resource.labels.service_name=\"workeroauth\" OR resource.labels.service_name=\"workersnapshot\")",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "resource.labels.service_name"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "req/s",
+              "scale": "LINEAR"
+            }
+          }
+        }
+      },
+      {
+        "xPos": 24,
+        "yPos": 0,
+        "width": 24,
+        "height": 8,
+        "widget": {
+          "title": "Cloud Run 5xx Error Rate (errors/s)",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "legendTemplate": "${resource.labels.service_name}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" metric.labels.response_code_class=\"5xx\" (resource.labels.service_name=\"discordproxy\" OR resource.labels.service_name=\"webproxy\" OR resource.labels.service_name=\"oauthproxy\" OR resource.labels.service_name=\"workerdraw\" OR resource.labels.service_name=\"workerdiscord\" OR resource.labels.service_name=\"workeroauth\" OR resource.labels.service_name=\"workersnapshot\")",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "resource.labels.service_name"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "errors/s",
+              "scale": "LINEAR"
+            }
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 8,
+        "width": 24,
+        "height": 8,
+        "widget": {
+          "title": "Cloud Run p95 Request Latency (ms)",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "legendTemplate": "${resource.labels.service_name}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" (resource.labels.service_name=\"discordproxy\" OR resource.labels.service_name=\"webproxy\" OR resource.labels.service_name=\"oauthproxy\" OR resource.labels.service_name=\"workerdraw\" OR resource.labels.service_name=\"workerdiscord\" OR resource.labels.service_name=\"workeroauth\" OR resource.labels.service_name=\"workersnapshot\")",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                      "crossSeriesReducer": "REDUCE_MEAN",
+                      "groupByFields": [
+                        "resource.labels.service_name"
+                      ]
+                    }
+                  },
+                  "unitOverride": "ms"
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "ms",
+              "scale": "LINEAR"
+            }
+          }
+        }
+      },
+      {
+        "xPos": 24,
+        "yPos": 8,
+        "width": 24,
+        "height": 8,
+        "widget": {
+          "title": "Pub/Sub Undelivered Messages (jobs subscriptions)",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "legendTemplate": "${resource.labels.subscription_id}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\" resource.type=\"pubsub_subscription\" resource.labels.subscription_id=monitoring.regex.full_match(\"eventarc-europe-west1-(workerdraw|workerdiscord|workeroauth|workersnapshot)-.*\")",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "groupByFields": [
+                        "resource.labels.subscription_id"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "messages",
+              "scale": "LINEAR"
+            }
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 16,
+        "width": 24,
+        "height": 8,
+        "widget": {
+          "title": "Pub/Sub Oldest Unacked Message Age (s)",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "legendTemplate": "${resource.labels.subscription_id}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\" resource.type=\"pubsub_subscription\" resource.labels.subscription_id=monitoring.regex.full_match(\"eventarc-europe-west1-(workerdraw|workerdiscord|workeroauth|workersnapshot)-.*\")",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MAX",
+                      "groupByFields": [
+                        "resource.labels.subscription_id"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "seconds",
+              "scale": "LINEAR"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

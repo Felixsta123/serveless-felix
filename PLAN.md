@@ -1,6 +1,6 @@
 # Serverless Plan (GCP)
 
-Last status sync: 2026-02-13 (dev environment `serverless-felix-dev`)
+Last status sync: 2026-02-14 (dev environment `serverless-felix-dev`)
 
 ## 1) Goal
 Build a fully serverless, event-driven multiplayer pixel canvas where users draw via Discord and a web app.
@@ -48,7 +48,7 @@ All public traffic goes through API Gateway -> proxy functions -> Pub/Sub -> wor
 
 ### 3.3 Missing deliverables against subject/defense
 - Monitoring deliverables:
-  - No Cloud Monitoring dashboards yet.
+  - Cloud Monitoring dashboard-as-code implemented (`monitoring/dashboard.core.template.json`) and deploy script added (`scripts/deploy-monitoring.mjs`).
   - No alert policies yet.
   - Correlation-ID/tracing pattern not standardized across all functions.
 - Documentation deliverables:

@@ -54,6 +54,9 @@ jobs:
             gateway:
               - 'gateway/**'
               - 'scripts/deploy-gateway.mjs'
+            monitoring:
+              - 'monitoring/**'
+              - 'scripts/deploy-monitoring.mjs'
             web:
               - 'web/**'
 
@@ -85,6 +88,7 @@ jobs:
           fi
 
           echo "gateway_changed=${{ steps.changes.outputs.gateway }}" >> "$GITHUB_OUTPUT"
+          echo "monitoring_changed=${{ steps.changes.outputs.monitoring }}" >> "$GITHUB_OUTPUT"
           echo "web_changed=${{ steps.changes.outputs.web }}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
@@ -94,11 +98,11 @@ jobs:
           cache: 'npm'
 
       - name: Install backend dependencies
-        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true'
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true'
         run: npm ci
 
       - name: Authenticate to Google Cloud
-        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.web_changed == 'true'
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
@@ -106,7 +110,7 @@ jobs:
           export_environment_variables: true
 
       - name: Set GCP Keyfile Path
-        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.web_changed == 'true'
+        if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         run: echo "GCP_KEYFILE_PATH=${{ env.GOOGLE_APPLICATION_CREDENTIALS }}" >> $GITHUB_ENV
 
       - name: Deploy changed functions to Dev
@@ -121,6 +125,10 @@ jobs:
       - name: Deploy API Gateway (Dev)
         if: github.ref == 'refs/heads/dev' && steps.plan.outputs.gateway_changed == 'true'
         run: npm run deploy:dev:gateway
+
+      - name: Deploy Monitoring Dashboard (Dev)
+        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.monitoring_changed == 'true'
+        run: npm run deploy:dev:monitoring
 
       - name: Build Web App (Dev)
         if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
@@ -144,6 +152,10 @@ jobs:
       - name: Deploy API Gateway (Prod)
         if: github.ref == 'refs/heads/main' && steps.plan.outputs.gateway_changed == 'true'
         run: npm run deploy:prd:gateway
+
+      - name: Deploy Monitoring Dashboard (Prod)
+        if: github.ref == 'refs/heads/main' && steps.plan.outputs.monitoring_changed == 'true'
+        run: npm run deploy:prd:monitoring
 
       - name: Build Web App (Prod)
         if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'

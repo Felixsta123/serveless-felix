@@ -8,6 +8,13 @@ dist
 .DS_Store
 .env
 secrets.yml
+monitoring/dashboard.dev.json
+monitoring/dashboard.prd.json
+gateway/openapi.dev.yaml
+gateway/openapi.prd.yaml
+functions/
+index.js
+index.js.map
 
 # Firebase
 .firebase/
