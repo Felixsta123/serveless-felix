@@ -34,7 +34,7 @@ const state: CanvasState = {
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let stream: EventSource | null = null;
-let resubscribeTimer: number | null = null;
+let viewportRefreshTimer: number | null = null;
 let isPanning = false;
 let dragMoved = false;
 let suppressClick = false;
@@ -46,7 +46,7 @@ let lastStreamErrorAt = 0;
 let streamErrorCount = 0;
 let fallbackPollTimer: number | null = null;
 
-const RESUBSCRIBE_DEBOUNCE_MS = 120;
+const VIEWPORT_REFRESH_DEBOUNCE_MS = 250;
 const FALLBACK_POLL_INTERVAL_MS = 2500;
 const DRAG_THRESHOLD_PX = 3;
 const KEY_PAN_STEP = 5;
@@ -152,6 +152,16 @@ const ensureFallbackPolling = (): void => {
   }, FALLBACK_POLL_INTERVAL_MS);
 };
 
+const scheduleViewportRefresh = (): void => {
+  if (viewportRefreshTimer !== null) {
+    window.clearTimeout(viewportRefreshTimer);
+  }
+  viewportRefreshTimer = window.setTimeout(() => {
+    viewportRefreshTimer = null;
+    void refreshVisibleFromApi();
+  }, VIEWPORT_REFRESH_DEBOUNCE_MS);
+};
+
 const closeStream = (): void => {
   if (stream) {
     stream.close();
@@ -211,7 +221,7 @@ const openStream = (): void => {
       state.pixels.clear();
       render();
       window.dispatchEvent(new CustomEvent('canvasUpdated'));
-      scheduleResubscribe();
+      scheduleViewportRefresh();
     }
   });
 
@@ -227,19 +237,10 @@ const openStream = (): void => {
       );
     }
     if (streamErrorCount >= 3) {
+      closeStream();
       ensureFallbackPolling();
     }
   };
-};
-
-const scheduleResubscribe = (): void => {
-  if (resubscribeTimer !== null) {
-    window.clearTimeout(resubscribeTimer);
-  }
-  resubscribeTimer = window.setTimeout(() => {
-    resubscribeTimer = null;
-    openStream();
-  }, RESUBSCRIBE_DEBOUNCE_MS);
 };
 
 export const initCanvas = (el: HTMLCanvasElement): void => {
@@ -264,7 +265,10 @@ export const setOffset = (x: number, y: number, resubscribe = true): void => {
   state.offsetX = Math.round(x);
   state.offsetY = Math.round(y);
   if (resubscribe) {
-    scheduleResubscribe();
+    if (!stream) {
+      openStream();
+    }
+    scheduleViewportRefresh();
   }
   render();
   window.dispatchEvent(
@@ -443,9 +447,9 @@ const render = (): void => {
 export const unsubscribeAll = (): void => {
   closeStream();
   stopFallbackPolling();
-  if (resubscribeTimer !== null) {
-    window.clearTimeout(resubscribeTimer);
-    resubscribeTimer = null;
+  if (viewportRefreshTimer !== null) {
+    window.clearTimeout(viewportRefreshTimer);
+    viewportRefreshTimer = null;
   }
   if (canvas) {
     canvas.removeEventListener('click', handleClick);

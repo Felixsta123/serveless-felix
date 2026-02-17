@@ -526,12 +526,6 @@ export const webProxy: HttpFunction = async (req, res) =>
 
     let currentRoundId = initialSnapshot.roundId;
 
-    const withinWindow = (x: number, y: number): boolean =>
-      x >= initialSnapshot.window.minX &&
-      x <= initialSnapshot.window.maxX &&
-      y >= initialSnapshot.window.minY &&
-      y <= initialSnapshot.window.maxY;
-
     const activeAreaUnsubscribe = firestore.doc('activeArea/current').onSnapshot(
       (snap) => {
         if (!snap.exists) {
@@ -576,7 +570,6 @@ export const webProxy: HttpFunction = async (req, res) =>
             y === null ||
             !color ||
             !authorId ||
-            !withinWindow(x, y) ||
             roundId !== currentRoundId
           ) {
             continue;
