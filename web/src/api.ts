@@ -7,7 +7,7 @@ const authFetch = (input: string, init: RequestInit = {}) =>
   });
 
 const REQUEST_POLL_INTERVAL_MS = 250;
-const REQUEST_POLL_TIMEOUT_MS = 10000;
+const REQUEST_POLL_TIMEOUT_MS = 30000;
 
 type PendingRequestResponse = {
   requestId?: unknown;
@@ -33,7 +33,7 @@ const parseHttpError = async (res: Response): Promise<Error> => {
 
 const waitForRequestResult = async <T>(requestId: string): Promise<T> => {
   const deadline = Date.now() + REQUEST_POLL_TIMEOUT_MS;
-  const statusUrl = `${config.apiGateway}/web/request/${encodeURIComponent(requestId)}`;
+  const statusUrl = `${config.apiGateway}/web/request?requestId=${encodeURIComponent(requestId)}`;
 
   while (Date.now() < deadline) {
     const res = await authFetch(statusUrl, { method: 'GET' });

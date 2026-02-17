@@ -30,6 +30,7 @@ const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
 
 let currentUser: User | null = null;
 let oauthRealtimeToken: string | null = null;
+let canvasSyncMode: 'unknown' | 'realtime' | 'fallback' = 'unknown';
 
 const getInitialOffset = (min: number, max: number): number => {
   const viewPixels = Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
@@ -83,6 +84,25 @@ const setStatus = (msg: string, type: 'info' | 'error' | 'success' = 'info'): vo
   statusEl.className = type === 'info' ? '' : type;
 };
 
+const setConnectivityStatus = (): void => {
+  if (!currentUser) {
+    setStatus('Connexion requise');
+    return;
+  }
+
+  if (canvasSyncMode === 'realtime') {
+    setStatus('Connecté', 'success');
+    return;
+  }
+
+  if (canvasSyncMode === 'fallback') {
+    setStatus('Connecté (dégradé)');
+    return;
+  }
+
+  setStatus('Connecté', 'success');
+};
+
 const updateViewportInfo = (): void => {
   const { offsetX, offsetY } = getState();
   viewportEl.textContent = `Origine : (${offsetX}, ${offsetY})`;
@@ -106,6 +126,9 @@ const handleDraw = async (): Promise<void> => {
     });
     await drawPixel(selected.x, selected.y, color);
     setStatus('Pixel dessiné', 'success');
+    window.setTimeout(() => {
+      setConnectivityStatus();
+    }, 1200);
   } catch (err) {
     setStatus(`Erreur : ${err instanceof Error ? err.message : 'Inconnue'}`, 'error');
   } finally {
@@ -156,18 +179,22 @@ const init = async (): Promise<void> => {
 
   const user = getUser();
   if (user) {
+    updateAuthUI(user);
     if (oauthRealtimeToken) {
       setRealtimeToken(oauthRealtimeToken);
     } else {
-      try {
-        const token = await getRealtimeToken();
-        setRealtimeToken(token);
-      } catch (error) {
-        console.warn('Failed to fetch realtime token', error);
-        setRealtimeToken(null);
-      }
+      setRealtimeToken(null);
+      void getRealtimeToken()
+        .then((token) => {
+          if (!getUser()) {
+            return;
+          }
+          setRealtimeToken(token);
+        })
+        .catch((error) => {
+          console.warn('Failed to fetch realtime token', error);
+        });
     }
-    updateAuthUI(user);
   } else {
     clearSession();
     oauthRealtimeToken = null;
@@ -177,16 +204,34 @@ const init = async (): Promise<void> => {
 
   initCanvas(canvasEl);
 
+  window.addEventListener('canvasError', ((e: CustomEvent) => {
+    const message = typeof e.detail?.error === 'string' ? e.detail.error : 'Erreur inconnue';
+    if (canvasSyncMode === 'realtime' && message.includes('Timed out while waiting for request result')) {
+      return;
+    }
+    setStatus(`Erreur canvas : ${message}`, 'error');
+  }) as EventListener);
+
+  window.addEventListener('canvasModeChanged', ((e: CustomEvent) => {
+    const mode = e.detail?.mode;
+    if (mode === 'realtime' || mode === 'fallback') {
+      canvasSyncMode = mode;
+    } else {
+      canvasSyncMode = 'unknown';
+    }
+    setConnectivityStatus();
+  }) as EventListener);
+
   if (!currentUser) {
     setOffset(0, 0, false);
-    setStatus('Connexion requise');
+    setConnectivityStatus();
   } else {
     try {
       const area = await getActiveArea();
       const offsetX = getInitialOffset(area.minX, area.maxX);
       const offsetY = getInitialOffset(area.minY, area.maxY);
       setOffset(offsetX, offsetY);
-      setStatus('Connecté', 'success');
+      setConnectivityStatus();
     } catch (error) {
       if (
         error instanceof Error &&
@@ -195,10 +240,10 @@ const init = async (): Promise<void> => {
         clearSession();
         updateAuthUI(null);
         setOffset(0, 0, false);
-        setStatus('Connexion requise');
+        setConnectivityStatus();
       } else {
         setOffset(0, 0);
-        setStatus('Connecté (nouveau canvas)', 'success');
+        setConnectivityStatus();
       }
     }
   }
@@ -220,6 +265,7 @@ const init = async (): Promise<void> => {
     clearSession();
     updateAuthUI(null);
     unsubscribeAll();
+    canvasSyncMode = 'unknown';
     setStatus('Déconnecté');
   });
 
@@ -243,10 +289,6 @@ const init = async (): Promise<void> => {
   });
 
   updateViewportInfo();
-
-  window.addEventListener('canvasError', ((e: CustomEvent) => {
-    setStatus(`Erreur canvas : ${e.detail.error}`, 'error');
-  }) as EventListener);
 };
 
 init().catch((err) => {

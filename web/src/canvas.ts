@@ -17,6 +17,8 @@ type CanvasState = {
   activeRoundId: string | null;
 };
 
+type CanvasSyncMode = 'realtime' | 'fallback' | 'disabled';
+
 const state: CanvasState = {
   pixels: new Map(),
   offsetX: 0,
@@ -58,6 +60,10 @@ const GRID_COLOR = '#27272a';
 const SELECTION_COLOR = '#fafafa';
 
 const key = (x: number, y: number) => `${x}_${y}`;
+const emitCanvasSyncMode = (mode: CanvasSyncMode): void => {
+  window.dispatchEvent(new CustomEvent('canvasModeChanged', { detail: { mode } }));
+};
+
 const chunkIdFor = (x: number, y: number) =>
   `${Math.floor(x / config.chunkSize)}_${Math.floor(y / config.chunkSize)}`;
 
@@ -227,6 +233,7 @@ const disableRealtime = (): void => {
     activeAreaUnsubscribe();
     activeAreaUnsubscribe = null;
   }
+  emitCanvasSyncMode('disabled');
 };
 
 const notifyRealtimeError = (error: unknown): void => {
@@ -269,6 +276,9 @@ const refreshVisibleFromApi = async (): Promise<void> => {
     scheduleRender();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+    if (realtimeEnabled && message.includes('Timed out while waiting for request result')) {
+      return;
+    }
     window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: message } }));
   }
 };
@@ -292,6 +302,7 @@ const startFallbackPolling = (): void => {
   fallbackPollTimer = window.setInterval(() => {
     void refreshVisibleFromApi();
   }, FALLBACK_POLL_INTERVAL_MS);
+  emitCanvasSyncMode('fallback');
 };
 
 const scheduleRealtimePrime = (): void => {
@@ -410,6 +421,7 @@ const startRealtime = async (): Promise<boolean> => {
       realtimeEnabled = true;
       realtimeErrors = 0;
       stopFallbackPolling();
+      emitCanvasSyncMode('realtime');
 
       if (!activeAreaUnsubscribe) {
         activeAreaUnsubscribe = watchActiveArea(
@@ -449,6 +461,16 @@ const startRealtime = async (): Promise<boolean> => {
 
 export const setRealtimeToken = (token: string | null): void => {
   setRealtimeCustomToken(token);
+  if (token && !realtimeEnabled) {
+    void startRealtime().then((started) => {
+      if (!started) {
+        return;
+      }
+      repaintVisibleFromCache();
+      syncChunkSubscriptions();
+      scheduleRealtimePrime();
+    });
+  }
 };
 
 export const signOutRealtimeClient = async (): Promise<void> => {
