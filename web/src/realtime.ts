@@ -55,6 +55,15 @@ export const setRealtimeCustomToken = (token: string | null): void => {
   customToken = token;
 };
 
+export const hasPersistedRealtimeAuth = async (): Promise<boolean> => {
+  const { auth } = ensureClients();
+  await persistenceReady;
+  if (typeof auth.authStateReady === 'function') {
+    await auth.authStateReady();
+  }
+  return Boolean(auth.currentUser);
+};
+
 export const ensureRealtimeAuth = async (): Promise<boolean> => {
   const { auth } = ensureClients();
   await persistenceReady;

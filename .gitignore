@@ -18,3 +18,8 @@ gateway/openapi.prd.yaml
 # Firebase
 .firebase/
 firebase-debug.log
+
+functions/
+!src/functions/
+index.js
+index.js.map

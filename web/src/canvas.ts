@@ -17,7 +17,7 @@ type CanvasState = {
   activeRoundId: string | null;
 };
 
-type CanvasSyncMode = 'realtime' | 'fallback' | 'disabled';
+type CanvasSyncMode = 'connecting' | 'realtime' | 'fallback' | 'disabled';
 
 const state: CanvasState = {
   pixels: new Map(),
@@ -35,6 +35,7 @@ let realtimePrimeTimer: number | null = null;
 let activeAreaUnsubscribe: (() => void) | null = null;
 let realtimeStartPromise: Promise<boolean> | null = null;
 let realtimeEnabled = false;
+let fallbackReady = false;
 let realtimeErrors = 0;
 const chunkUnsubById = new Map<string, () => void>();
 const chunkCache = new Map<string, Map<string, Pixel>>();
@@ -210,6 +211,7 @@ const stopFallbackPolling = (): void => {
     window.clearInterval(fallbackPollTimer);
     fallbackPollTimer = null;
   }
+  fallbackReady = false;
 };
 
 const stopRealtimePrime = (): void => {
@@ -246,7 +248,7 @@ const notifyRealtimeError = (error: unknown): void => {
   startFallbackPolling();
 };
 
-const refreshVisibleFromApi = async (): Promise<void> => {
+const refreshVisibleFromApi = async (): Promise<boolean> => {
   try {
     const bounds = getWindowBounds();
     const payload = await getCanvasWindow(bounds.minX, bounds.minY, bounds.size);
@@ -274,12 +276,18 @@ const refreshVisibleFromApi = async (): Promise<void> => {
 
     state.pixels = freshVisible;
     scheduleRender();
+    if (fallbackPollTimer !== null && !fallbackReady) {
+      fallbackReady = true;
+      emitCanvasSyncMode('fallback');
+    }
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (realtimeEnabled && message.includes('Timed out while waiting for request result')) {
-      return;
+      return false;
     }
     window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: message } }));
+    return false;
   }
 };
 
@@ -298,11 +306,12 @@ const startFallbackPolling = (): void => {
     return;
   }
   stopRealtimePrime();
-  scheduleViewportFetch(0);
+  fallbackReady = false;
+  emitCanvasSyncMode('connecting');
+  void refreshVisibleFromApi();
   fallbackPollTimer = window.setInterval(() => {
     void refreshVisibleFromApi();
   }, FALLBACK_POLL_INTERVAL_MS);
-  emitCanvasSyncMode('fallback');
 };
 
 const scheduleRealtimePrime = (): void => {
@@ -410,6 +419,7 @@ const startRealtime = async (): Promise<boolean> => {
     return realtimeStartPromise;
   }
 
+  emitCanvasSyncMode('connecting');
   realtimeStartPromise = (async () => {
     try {
       const authed = await ensureRealtimeAuth();

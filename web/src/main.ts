@@ -2,6 +2,7 @@ import './style.css';
 import { config } from './config';
 import { getUser, setUser, clearSession, startLogin, pollSession, User } from './auth';
 import { drawPixel, getRealtimeToken, logoutSession, Pixel } from './api';
+import { hasPersistedRealtimeAuth } from './realtime';
 import {
   initCanvas,
   unsubscribeAll,
@@ -30,7 +31,13 @@ const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
 
 let currentUser: User | null = null;
 let oauthRealtimeToken: string | null = null;
-let canvasSyncMode: 'unknown' | 'realtime' | 'fallback' = 'unknown';
+let canvasSyncMode: 'unknown' | 'connecting' | 'realtime' | 'fallback' | 'disabled' = 'unknown';
+
+const isConnectionReady = (): boolean => canvasSyncMode === 'realtime' || canvasSyncMode === 'fallback';
+
+const updateDrawAvailability = (): void => {
+  drawBtn.disabled = !(currentUser && isConnectionReady());
+};
 
 const getInitialOffset = (min: number, max: number): number => {
   const viewPixels = Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
@@ -52,12 +59,11 @@ const updateAuthUI = (user: User | null): void => {
       userAvatar.style.display = 'none';
     }
 
-    drawBtn.disabled = false;
   } else {
     loginBtn.style.display = 'block';
     userInfo.style.display = 'none';
-    drawBtn.disabled = true;
   }
+  updateDrawAvailability();
 };
 
 const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
@@ -74,9 +80,7 @@ const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
     updatedEl.textContent = '';
   }
 
-  if (currentUser) {
-    drawBtn.disabled = false;
-  }
+  updateDrawAvailability();
 };
 
 const setStatus = (msg: string, type: 'info' | 'error' | 'success' = 'info'): void => {
@@ -87,20 +91,24 @@ const setStatus = (msg: string, type: 'info' | 'error' | 'success' = 'info'): vo
 const setConnectivityStatus = (): void => {
   if (!currentUser) {
     setStatus('Connexion requise');
+    updateDrawAvailability();
     return;
   }
 
   if (canvasSyncMode === 'realtime') {
     setStatus('Connecté', 'success');
+    updateDrawAvailability();
     return;
   }
 
   if (canvasSyncMode === 'fallback') {
     setStatus('Connecté (dégradé)');
+    updateDrawAvailability();
     return;
   }
 
-  setStatus('Connecté', 'success');
+  setStatus('Connexion en cours...');
+  updateDrawAvailability();
 };
 
 const updateViewportInfo = (): void => {
@@ -111,6 +119,13 @@ const updateViewportInfo = (): void => {
 const handleDraw = async (): Promise<void> => {
   if (!currentUser) {
     setStatus('Connexion requise');
+    updateDrawAvailability();
+    return;
+  }
+
+  if (!isConnectionReady()) {
+    setStatus('Connexion en cours...');
+    updateDrawAvailability();
     return;
   }
 
@@ -140,10 +155,24 @@ const handleDraw = async (): Promise<void> => {
   } catch (err) {
     setStatus(`Erreur : ${err instanceof Error ? err.message : 'Inconnue'}`, 'error');
   } finally {
-    if (currentUser) {
-      drawBtn.disabled = false;
-    }
+    updateDrawAvailability();
   }
+};
+
+const fetchRealtimeTokenInBackground = (): void => {
+  void getRealtimeToken()
+    .then((token) => {
+      if (!getUser()) {
+        return;
+      }
+      setRealtimeToken(token);
+    })
+    .catch((error) => {
+      if (!getUser() || isConnectionReady()) {
+        return;
+      }
+      console.warn('Failed to fetch realtime token', error);
+    });
 };
 
 const handleOAuthCallback = async (): Promise<boolean> => {
@@ -193,15 +222,18 @@ const init = async (): Promise<void> => {
       setRealtimeToken(oauthRealtimeToken);
     } else {
       setRealtimeToken(null);
-      void getRealtimeToken()
-        .then((token) => {
+      void hasPersistedRealtimeAuth()
+        .then((persistedAuth) => {
+          if (!getUser() || persistedAuth) {
+            return;
+          }
+          fetchRealtimeTokenInBackground();
+        })
+        .catch(() => {
           if (!getUser()) {
             return;
           }
-          setRealtimeToken(token);
-        })
-        .catch((error) => {
-          console.warn('Failed to fetch realtime token', error);
+          fetchRealtimeTokenInBackground();
         });
     }
   } else {
@@ -223,7 +255,7 @@ const init = async (): Promise<void> => {
 
   window.addEventListener('canvasModeChanged', ((e: CustomEvent) => {
     const mode = e.detail?.mode;
-    if (mode === 'realtime' || mode === 'fallback') {
+    if (mode === 'connecting' || mode === 'realtime' || mode === 'fallback' || mode === 'disabled') {
       canvasSyncMode = mode;
     } else {
       canvasSyncMode = 'unknown';
@@ -235,26 +267,34 @@ const init = async (): Promise<void> => {
     setOffset(0, 0, false);
     setConnectivityStatus();
   } else {
-    try {
-      const area = await getActiveArea();
-      const offsetX = getInitialOffset(area.minX, area.maxX);
-      const offsetY = getInitialOffset(area.minY, area.maxY);
-      setOffset(offsetX, offsetY);
-      setConnectivityStatus();
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.includes('HTTP 401') || error.message.includes('HTTP 403'))
-      ) {
-        clearSession();
-        updateAuthUI(null);
-        setOffset(0, 0, false);
-        setConnectivityStatus();
-      } else {
-        setOffset(0, 0);
-        setConnectivityStatus();
-      }
-    }
+    const initialUserId = currentUser.id;
+    setOffset(0, 0);
+    void getActiveArea()
+      .then((area) => {
+        const sessionUser = getUser();
+        if (!sessionUser || sessionUser.id !== initialUserId) {
+          return;
+        }
+        const offsetX = getInitialOffset(area.minX, area.maxX);
+        const offsetY = getInitialOffset(area.minY, area.maxY);
+        setOffset(offsetX, offsetY);
+      })
+      .catch((error) => {
+        const sessionUser = getUser();
+        if (!sessionUser || sessionUser.id !== initialUserId) {
+          return;
+        }
+        if (
+          error instanceof Error &&
+          (error.message.includes('HTTP 401') || error.message.includes('HTTP 403'))
+        ) {
+          clearSession();
+          updateAuthUI(null);
+          setOffset(0, 0, false);
+          setConnectivityStatus();
+        }
+      });
+    setConnectivityStatus();
   }
 
   loginBtn.addEventListener('click', startLogin);
