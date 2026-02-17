@@ -52,7 +52,7 @@ const updateAuthUI = (user: User | null): void => {
       userAvatar.style.display = 'none';
     }
 
-    drawBtn.disabled = getState().selected === null;
+    drawBtn.disabled = false;
   } else {
     loginBtn.style.display = 'block';
     userInfo.style.display = 'none';
@@ -109,8 +109,16 @@ const updateViewportInfo = (): void => {
 };
 
 const handleDraw = async (): Promise<void> => {
+  if (!currentUser) {
+    setStatus('Connexion requise');
+    return;
+  }
+
   const selected = getState().selected;
-  if (!selected || !currentUser) return;
+  if (!selected) {
+    setStatus('Sélectionnez un pixel sur le canvas.');
+    return;
+  }
 
   const color = colorPicker.value;
   drawBtn.disabled = true;
@@ -179,6 +187,7 @@ const init = async (): Promise<void> => {
 
   const user = getUser();
   if (user) {
+    setStatus('Connexion en cours...');
     updateAuthUI(user);
     if (oauthRealtimeToken) {
       setRealtimeToken(oauthRealtimeToken);
