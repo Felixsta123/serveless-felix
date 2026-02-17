@@ -196,18 +196,46 @@ gcloud storage buckets add-iam-policy-binding "gs://$SNAPSHOT_BUCKET" \
   --role="roles/storage.objectViewer"
 ```
 
-Needed for Firebase custom token signing in `workerOAuth` and `workerWebRealtimeToken`:
+Needed for service-account signing operations:
+- `workerOAuth` and `workerWebRealtimeToken`: Firebase custom token signing
+- `workerSnapshot` and `workerDiscordCanvas`: Cloud Storage signed URL generation
 
 ```bash
-gcloud iam service-accounts add-iam-policy-binding \
-  "sa-worker-oauth@$PROJECT_ID.iam.gserviceaccount.com" \
-  --member="serviceAccount:sa-worker-oauth@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/iam.serviceAccountTokenCreator"
+for SA in \
+  sa-worker-oauth \
+  sa-worker-web-realtime-token \
+  sa-worker-snapshot \
+  sa-worker-canvas
+do
+  gcloud iam service-accounts add-iam-policy-binding \
+    "${SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --member="serviceAccount:${SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="roles/iam.serviceAccountTokenCreator"
+done
+```
 
-gcloud iam service-accounts add-iam-policy-binding \
-  "sa-worker-web-realtime-token@$PROJECT_ID.iam.gserviceaccount.com" \
-  --member="serviceAccount:sa-worker-web-realtime-token@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/iam.serviceAccountTokenCreator"
+Needed for Pub/Sub push OIDC delivery to worker functions:
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+PUBSUB_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+for SA in \
+  sa-worker-draw \
+  sa-worker-session \
+  sa-worker-snapshot \
+  sa-worker-canvas \
+  sa-worker-followup \
+  sa-worker-oauth \
+  sa-worker-web-read \
+  sa-worker-web-active-area \
+  sa-worker-web-realtime-token
+do
+  gcloud iam service-accounts add-iam-policy-binding \
+    "${SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --member="serviceAccount:${PUBSUB_SERVICE_AGENT}" \
+    --role="roles/iam.serviceAccountTokenCreator"
+done
 ```
 
 ## 6. Secrets

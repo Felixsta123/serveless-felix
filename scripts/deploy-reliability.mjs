@@ -14,6 +14,17 @@ const workers = [
   'workerwebread',
   'workerwebrealtimetoken',
 ];
+const workerServiceAccounts = {
+  workerdraw: 'sa-worker-draw',
+  workerdiscord: 'sa-worker-session',
+  workerdiscordcanvas: 'sa-worker-canvas',
+  workerdiscordfollowup: 'sa-worker-followup',
+  workeroauth: 'sa-worker-oauth',
+  workersnapshot: 'sa-worker-snapshot',
+  workerwebactivearea: 'sa-worker-web-active-area',
+  workerwebread: 'sa-worker-web-read',
+  workerwebrealtimetoken: 'sa-worker-web-realtime-token',
+};
 const workerTopics = [
   'jobs-draw',
   'jobs-canvas',
@@ -27,6 +38,12 @@ const workerTopics = [
 ];
 const dlqTopic = 'jobs-dlq';
 const dlqSubscription = 'jobs-dlq-sub';
+const workerSelfTokenCreatorServiceAccounts = [
+  'sa-worker-oauth',
+  'sa-worker-web-realtime-token',
+  'sa-worker-snapshot',
+  'sa-worker-canvas',
+];
 
 const ensureTopic = (topicId) => {
   const describe = runResult([
@@ -117,6 +134,45 @@ runInherit([
   'roles/pubsub.publisher',
 ]);
 
+const ensurePubSubTokenCreatorBindings = () => {
+  const serviceAccounts = new Set(Object.values(workerServiceAccounts));
+  for (const serviceAccount of serviceAccounts) {
+    const serviceAccountEmail = `${serviceAccount}@${projectId}.iam.gserviceaccount.com`;
+    runInherit([
+      'iam',
+      'service-accounts',
+      'add-iam-policy-binding',
+      serviceAccountEmail,
+      '--project',
+      projectId,
+      '--member',
+      `serviceAccount:${pubsubServiceAgent}`,
+      '--role',
+      'roles/iam.serviceAccountTokenCreator',
+    ]);
+  }
+};
+ensurePubSubTokenCreatorBindings();
+
+const ensureWorkerSelfTokenCreatorBindings = () => {
+  for (const serviceAccount of workerSelfTokenCreatorServiceAccounts) {
+    const serviceAccountEmail = `${serviceAccount}@${projectId}.iam.gserviceaccount.com`;
+    runInherit([
+      'iam',
+      'service-accounts',
+      'add-iam-policy-binding',
+      serviceAccountEmail,
+      '--project',
+      projectId,
+      '--member',
+      `serviceAccount:${serviceAccountEmail}`,
+      '--role',
+      'roles/iam.serviceAccountTokenCreator',
+    ]);
+  }
+};
+ensureWorkerSelfTokenCreatorBindings();
+
 const ensureRunInvokerBindings = (service) => {
   const describe = runResult([
     'run',
@@ -133,9 +189,13 @@ const ensureRunInvokerBindings = (service) => {
     return;
   }
 
+  const triggerServiceAccount = workerServiceAccounts[service];
   const members = [
     `serviceAccount:${eventarcServiceAgent}`,
     `serviceAccount:${pubsubServiceAgent}`,
+    ...(triggerServiceAccount
+      ? [`serviceAccount:${triggerServiceAccount}@${projectId}.iam.gserviceaccount.com`]
+      : []),
   ];
   for (const member of members) {
     runInherit([
