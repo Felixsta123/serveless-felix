@@ -138,6 +138,14 @@ for (const name of names) {
     args.push('--service-account', serviceAccount);
   }
 
+  if (
+    typeof config.timeoutSeconds === 'number' &&
+    Number.isInteger(config.timeoutSeconds) &&
+    config.timeoutSeconds > 0
+  ) {
+    args.push('--timeout', `${config.timeoutSeconds}s`);
+  }
+
   const envVars = resolveEnvVars(config);
   const envEntries = Object.entries(envVars);
   if (envEntries.length > 0) {

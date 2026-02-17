@@ -33,6 +33,7 @@ export const functions = {
   webProxy: {
     trigger: 'http',
     serviceAccount: 'proxy',
+    timeoutSeconds: 540,
     envByEnvironmentFromConfig: ['WEB_APP_URL'],
   },
   oauthProxy: {

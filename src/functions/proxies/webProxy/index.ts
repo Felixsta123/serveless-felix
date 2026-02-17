@@ -13,6 +13,7 @@ import {
   normalizeHexColor,
   parseIntStrict,
   parsePositiveInt,
+  toRoundId,
 } from '../../shared/validation.js';
 import { toChunkRange } from '../../shared/canvasMath.js';
 import { runWithSpan } from '../../shared/tracing.js';
@@ -40,6 +41,33 @@ type PixelRecord = {
   color: string;
   authorId: string;
   updatedAt: string | null;
+};
+
+type ActiveAreaRecord = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  roundId: string | null;
+};
+
+type CanvasWindowQuery = {
+  offsetX: number;
+  offsetY: number;
+  size: number;
+};
+
+type CanvasWindowPayload = {
+  roundId: string | null;
+  window: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    size: number;
+  };
+  activeArea: ActiveAreaRecord;
+  pixels: PixelRecord[];
 };
 
 const setCorsHeaders = (res: Parameters<HttpFunction>[1]) => {
@@ -144,6 +172,98 @@ const toTimestampIso = (value: unknown): string | null => {
     return value.toDate().toISOString();
   }
   return null;
+};
+
+const toDayKey = (date: Date): string => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
+};
+
+const readActiveArea = (data: Record<string, unknown>): ActiveAreaRecord => ({
+  minX: parseIntStrict(data.minX) ?? 0,
+  minY: parseIntStrict(data.minY) ?? 0,
+  maxX: parseIntStrict(data.maxX) ?? 0,
+  maxY: parseIntStrict(data.maxY) ?? 0,
+  roundId: toRoundId(data.roundId),
+});
+
+const parseCanvasWindowQuery = (
+  query: Record<string, unknown>,
+): CanvasWindowQuery | null => {
+  const offsetX = parseIntStrict(query.offsetX);
+  const offsetY = parseIntStrict(query.offsetY);
+  const size = parsePositiveInt(query.size);
+  if (offsetX === null || offsetY === null || size === null || size > 500) {
+    return null;
+  }
+  return { offsetX, offsetY, size };
+};
+
+const loadCanvasWindow = async (
+  windowQuery: CanvasWindowQuery,
+): Promise<CanvasWindowPayload> => {
+  const minX = windowQuery.offsetX;
+  const minY = windowQuery.offsetY;
+  const maxX = windowQuery.offsetX + windowQuery.size - 1;
+  const maxY = windowQuery.offsetY + windowQuery.size - 1;
+
+  const activeSnap = await firestore.doc('activeArea/current').get();
+  const activeData = (activeSnap.data() as Record<string, unknown> | undefined) ?? {};
+  const activeArea = readActiveArea(activeData);
+
+  const chunks = toChunkRange(minX, minY, maxX, maxY, CHUNK_SIZE);
+  const chunkSnapshots = await Promise.all(
+    chunks.map(({ chunkId }) => {
+      const col = firestore.collection(`chunks/${chunkId}/pixels`);
+      return activeArea.roundId ? col.where('roundId', '==', activeArea.roundId).get() : col.get();
+    }),
+  );
+
+  const dedup = new Map<string, PixelRecord>();
+  for (const chunkSnap of chunkSnapshots) {
+    for (const doc of chunkSnap.docs) {
+      const data = doc.data() as Record<string, unknown>;
+      const x = parseIntStrict(data.x);
+      const y = parseIntStrict(data.y);
+      if (x === null || y === null) {
+        continue;
+      }
+      if (x < minX || x > maxX || y < minY || y > maxY) {
+        continue;
+      }
+      const color = typeof data.color === 'string' ? data.color : null;
+      const authorId = typeof data.authorId === 'string' ? data.authorId : null;
+      if (!color || !authorId) {
+        continue;
+      }
+      dedup.set(`${x}_${y}`, {
+        x,
+        y,
+        color,
+        authorId,
+        updatedAt: toTimestampIso(data.updatedAt),
+      });
+    }
+  }
+
+  return {
+    roundId: activeArea.roundId,
+    window: { minX, minY, maxX, maxY, size: windowQuery.size },
+    activeArea,
+    pixels: Array.from(dedup.values()),
+  };
+};
+
+const writeSseEvent = (
+  res: Parameters<HttpFunction>[1],
+  event: string,
+  payload: unknown,
+): void => {
+  const body = JSON.stringify(payload);
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${body}\n\n`);
 };
 
 export const webProxy: HttpFunction = async (req, res) =>
@@ -280,6 +400,7 @@ export const webProxy: HttpFunction = async (req, res) =>
           username: data.discordUsername,
           avatar: data.discordAvatar,
         },
+        firebaseCustomToken: data.firebaseCustomToken ?? null,
       });
       return;
     }
@@ -363,6 +484,166 @@ export const webProxy: HttpFunction = async (req, res) =>
     return;
   }
 
+  if (req.method === 'GET' && path === '/stream') {
+    const session = await validateSession(req, requestContext, path);
+    if (!session) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const windowQuery = parseCanvasWindowQuery(req.query as Record<string, unknown>);
+    if (!windowQuery) {
+      res.status(400).json({
+        error: 'Invalid query params. Required: offsetX (int), offsetY (int), size (1-500)',
+      });
+      return;
+    }
+
+    const streamStartedAt = Timestamp.now();
+    let initialSnapshot: CanvasWindowPayload;
+    try {
+      initialSnapshot = await loadCanvasWindow(windowQuery);
+    } catch (error) {
+      logError('web_proxy_stream_snapshot_failed', error, {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+        offsetX: windowQuery.offsetX,
+        offsetY: windowQuery.offsetY,
+        size: windowQuery.size,
+      });
+      res.status(500).json({ error: 'Failed to initialize stream' });
+      return;
+    }
+
+    res.status(200);
+    res.set('Content-Type', 'text/event-stream');
+    res.set('Cache-Control', 'no-cache, no-transform');
+    res.set('Connection', 'keep-alive');
+    res.set('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    writeSseEvent(res, 'snapshot', initialSnapshot);
+
+    let currentRoundId = initialSnapshot.roundId;
+
+    const withinWindow = (x: number, y: number): boolean =>
+      x >= initialSnapshot.window.minX &&
+      x <= initialSnapshot.window.maxX &&
+      y >= initialSnapshot.window.minY &&
+      y <= initialSnapshot.window.maxY;
+
+    const activeAreaUnsubscribe = firestore.doc('activeArea/current').onSnapshot(
+      (snap) => {
+        if (!snap.exists) {
+          return;
+        }
+        const activeArea = readActiveArea(
+          (snap.data() as Record<string, unknown> | undefined) ?? {},
+        );
+        currentRoundId = activeArea.roundId;
+        writeSseEvent(res, 'active_area', activeArea);
+      },
+      (error) => {
+        logError('web_proxy_stream_active_area_watch_failed', error, {
+          ...requestContext,
+          path,
+          userId: session.discordUserId,
+        });
+      },
+    );
+
+    const eventsQuery = firestore
+      .collection(`eventsByDay/${toDayKey(new Date())}/items`)
+      .where('ts', '>', streamStartedAt)
+      .orderBy('ts', 'asc');
+
+    const eventsUnsubscribe = eventsQuery.onSnapshot(
+      (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+          if (change.type !== 'added') {
+            continue;
+          }
+
+          const data = change.doc.data() as Record<string, unknown>;
+          const x = parseIntStrict(data.x);
+          const y = parseIntStrict(data.y);
+          const color = typeof data.newColor === 'string' ? data.newColor : null;
+          const authorId = typeof data.userId === 'string' ? data.userId : null;
+          const roundId = toRoundId(data.roundId);
+
+          if (
+            x === null ||
+            y === null ||
+            !color ||
+            !authorId ||
+            !withinWindow(x, y) ||
+            roundId !== currentRoundId
+          ) {
+            continue;
+          }
+
+          writeSseEvent(res, 'pixel', {
+            x,
+            y,
+            color,
+            authorId,
+            updatedAt: toTimestampIso(data.ts),
+          } satisfies PixelRecord);
+        }
+      },
+      (error) => {
+        logError('web_proxy_stream_events_watch_failed', error, {
+          ...requestContext,
+          path,
+          userId: session.discordUserId,
+          day: toDayKey(new Date()),
+        });
+      },
+    );
+
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(': keepalive\n\n');
+      }
+    }, 15000);
+
+    let closed = false;
+    const closeStream = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      clearInterval(heartbeat);
+      activeAreaUnsubscribe();
+      eventsUnsubscribe();
+      if (!res.writableEnded) {
+        res.end();
+      }
+      logInfo('web_proxy_stream_closed', {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+        offsetX: windowQuery.offsetX,
+        offsetY: windowQuery.offsetY,
+        size: windowQuery.size,
+      });
+    };
+
+    req.on('close', closeStream);
+    req.on('aborted', closeStream);
+
+    logInfo('web_proxy_stream_opened', {
+      ...requestContext,
+      path,
+      userId: session.discordUserId,
+      offsetX: windowQuery.offsetX,
+      offsetY: windowQuery.offsetY,
+      size: windowQuery.size,
+      roundId: initialSnapshot.roundId,
+    });
+    return;
+  }
+
   if (req.method === 'GET' && path === '/active-area') {
     const session = await validateSession(req, requestContext, path);
     if (!session) {
@@ -376,14 +657,9 @@ export const webProxy: HttpFunction = async (req, res) =>
         res.status(200).json({ minX: 0, minY: 0, maxX: 0, maxY: 0, roundId: null });
         return;
       }
-      const data = snap.data() as Record<string, unknown>;
-      res.status(200).json({
-        minX: parseIntStrict(data.minX) ?? 0,
-        minY: parseIntStrict(data.minY) ?? 0,
-        maxX: parseIntStrict(data.maxX) ?? 0,
-        maxY: parseIntStrict(data.maxY) ?? 0,
-        roundId: typeof data.roundId === 'string' ? data.roundId : null,
-      });
+      res.status(200).json(
+        readActiveArea((snap.data() as Record<string, unknown> | undefined) ?? {}),
+      );
       return;
     } catch (error) {
       logError('web_proxy_active_area_failed', error, {
@@ -403,82 +679,25 @@ export const webProxy: HttpFunction = async (req, res) =>
       return;
     }
 
-    const offsetX = parseIntStrict(req.query.offsetX);
-    const offsetY = parseIntStrict(req.query.offsetY);
-    const size = parsePositiveInt(req.query.size);
-
-    if (offsetX === null || offsetY === null || size === null || size > 500) {
+    const windowQuery = parseCanvasWindowQuery(req.query as Record<string, unknown>);
+    if (!windowQuery) {
       res.status(400).json({
         error: 'Invalid query params. Required: offsetX (int), offsetY (int), size (1-500)',
       });
       return;
     }
 
-    const minX = offsetX;
-    const minY = offsetY;
-    const maxX = offsetX + size - 1;
-    const maxY = offsetY + size - 1;
-
     try {
-      const activeSnap = await firestore.doc('activeArea/current').get();
-      const activeData = (activeSnap.data() as Record<string, unknown> | undefined) ?? {};
-      const roundId = typeof activeData.roundId === 'string' ? activeData.roundId : null;
-
-      const chunks = toChunkRange(minX, minY, maxX, maxY, CHUNK_SIZE);
-      const chunkSnapshots = await Promise.all(
-        chunks.map(({ chunkId }) => {
-          const col = firestore.collection(`chunks/${chunkId}/pixels`);
-          return roundId ? col.where('roundId', '==', roundId).get() : col.get();
-        }),
-      );
-
-      const dedup = new Map<string, PixelRecord>();
-      for (const chunkSnap of chunkSnapshots) {
-        for (const doc of chunkSnap.docs) {
-          const data = doc.data() as Record<string, unknown>;
-          const x = parseIntStrict(data.x);
-          const y = parseIntStrict(data.y);
-          if (x === null || y === null) {
-            continue;
-          }
-          if (x < minX || x > maxX || y < minY || y > maxY) {
-            continue;
-          }
-          const color = typeof data.color === 'string' ? data.color : null;
-          const authorId = typeof data.authorId === 'string' ? data.authorId : null;
-          if (!color || !authorId) {
-            continue;
-          }
-          dedup.set(`${x}_${y}`, {
-            x,
-            y,
-            color,
-            authorId,
-            updatedAt: toTimestampIso(data.updatedAt),
-          });
-        }
-      }
-
-      res.status(200).json({
-        roundId,
-        window: { minX, minY, maxX, maxY, size },
-        activeArea: {
-          minX: parseIntStrict(activeData.minX) ?? 0,
-          minY: parseIntStrict(activeData.minY) ?? 0,
-          maxX: parseIntStrict(activeData.maxX) ?? 0,
-          maxY: parseIntStrict(activeData.maxY) ?? 0,
-        },
-        pixels: Array.from(dedup.values()),
-      });
+      res.status(200).json(await loadCanvasWindow(windowQuery));
       return;
     } catch (error) {
       logError('web_proxy_canvas_failed', error, {
         ...requestContext,
         path,
         userId: session.discordUserId,
-        offsetX,
-        offsetY,
-        size,
+        offsetX: windowQuery.offsetX,
+        offsetY: windowQuery.offsetY,
+        size: windowQuery.size,
       });
       res.status(500).json({ error: 'Failed to read canvas' });
       return;

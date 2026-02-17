@@ -1,6 +1,6 @@
 import { config } from './config';
-import { getActiveArea as fetchActiveArea, getCanvasWindow } from './api';
-import type { Pixel } from './api';
+import { getActiveArea as fetchActiveArea } from './api';
+import type { ActiveArea, Pixel } from './api';
 
 type CanvasState = {
   pixels: Map<string, Pixel>;
@@ -8,6 +8,19 @@ type CanvasState = {
   offsetY: number;
   selected: { x: number; y: number } | null;
   activeRoundId: string | null;
+};
+
+type StreamSnapshotPayload = {
+  roundId: string | null;
+  window: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    size: number;
+  };
+  activeArea: ActiveArea;
+  pixels: Pixel[];
 };
 
 const state: CanvasState = {
@@ -20,8 +33,8 @@ const state: CanvasState = {
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
-let pollTimer: number | null = null;
-let inFlight = false;
+let stream: EventSource | null = null;
+let resubscribeTimer: number | null = null;
 let isPanning = false;
 let dragMoved = false;
 let suppressClick = false;
@@ -29,8 +42,9 @@ let panStartMouseX = 0;
 let panStartMouseY = 0;
 let panStartOffsetX = 0;
 let panStartOffsetY = 0;
+let lastStreamErrorAt = 0;
 
-const POLL_INTERVAL_MS = 1000;
+const RESUBSCRIBE_DEBOUNCE_MS = 120;
 const DRAG_THRESHOLD_PX = 3;
 const KEY_PAN_STEP = 5;
 const CANVAS_BG_COLOR = '#09090b';
@@ -52,43 +66,137 @@ const getViewSize = (): number => {
   return Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
 };
 
-const refreshVisible = async (): Promise<void> => {
-  if (inFlight) {
-    return;
-  }
-  inFlight = true;
+const parseStreamPayload = <T>(raw: string): T | null => {
   try {
-    const size = getViewSize();
-    const payload = await getCanvasWindow(state.offsetX, state.offsetY, size);
-    const roundChanged = applyRoundId(payload.roundId);
-
-    if (roundChanged) {
-      state.selected = null;
-    }
-
-    state.pixels.clear();
-    for (const pixel of payload.pixels) {
-      state.pixels.set(key(pixel.x, pixel.y), pixel);
-    }
-
-    render();
-    window.dispatchEvent(new CustomEvent('canvasUpdated'));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: message } }));
-  } finally {
-    inFlight = false;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
   }
 };
 
-const ensurePolling = (): void => {
-  if (pollTimer !== null) {
+const getWindowBounds = () => {
+  const size = getViewSize();
+  return {
+    minX: state.offsetX,
+    minY: state.offsetY,
+    maxX: state.offsetX + size - 1,
+    maxY: state.offsetY + size - 1,
+    size,
+  };
+};
+
+const pixelInsideWindow = (x: number, y: number): boolean => {
+  const bounds = getWindowBounds();
+  return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
+};
+
+const applySnapshot = (payload: StreamSnapshotPayload): void => {
+  const roundChanged = applyRoundId(payload.roundId);
+
+  if (roundChanged) {
+    state.selected = null;
+  }
+
+  state.pixels.clear();
+  for (const pixel of payload.pixels) {
+    state.pixels.set(key(pixel.x, pixel.y), pixel);
+  }
+
+  render();
+  window.dispatchEvent(new CustomEvent('canvasUpdated'));
+};
+
+const applyPixelUpdate = (pixel: Pixel): void => {
+  if (!pixelInsideWindow(pixel.x, pixel.y)) {
     return;
   }
-  void refreshVisible();
-  pollTimer = window.setInterval(() => {
-    void refreshVisible();
-  }, POLL_INTERVAL_MS);
+  state.pixels.set(key(pixel.x, pixel.y), pixel);
+  render();
+  window.dispatchEvent(new CustomEvent('canvasUpdated'));
+};
+
+const closeStream = (): void => {
+  if (stream) {
+    stream.close();
+    stream = null;
+  }
+};
+
+const openStream = (): void => {
+  closeStream();
+
+  const bounds = getWindowBounds();
+  const params = new URLSearchParams({
+    offsetX: String(bounds.minX),
+    offsetY: String(bounds.minY),
+    size: String(bounds.size),
+  });
+
+  stream = new EventSource(`${config.apiGateway}/web/stream?${params.toString()}`, {
+    withCredentials: true,
+  });
+
+  stream.addEventListener('snapshot', (event) => {
+    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
+      return;
+    }
+    const payload = parseStreamPayload<StreamSnapshotPayload>(event.data);
+    if (!payload) {
+      return;
+    }
+    applySnapshot(payload);
+  });
+
+  stream.addEventListener('pixel', (event) => {
+    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
+      return;
+    }
+    const payload = parseStreamPayload<Pixel>(event.data);
+    if (!payload) {
+      return;
+    }
+    applyPixelUpdate(payload);
+  });
+
+  stream.addEventListener('active_area', (event) => {
+    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
+      return;
+    }
+    const payload = parseStreamPayload<ActiveArea>(event.data);
+    if (!payload) {
+      return;
+    }
+    const roundChanged = applyRoundId(payload.roundId);
+    if (roundChanged) {
+      state.selected = null;
+      state.pixels.clear();
+      render();
+      window.dispatchEvent(new CustomEvent('canvasUpdated'));
+      scheduleResubscribe();
+    }
+  });
+
+  stream.onerror = () => {
+    const now = Date.now();
+    if (now - lastStreamErrorAt > 5000) {
+      lastStreamErrorAt = now;
+      window.dispatchEvent(
+        new CustomEvent('canvasError', {
+          detail: { error: 'Flux temps réel interrompu, reconnexion automatique...' },
+        }),
+      );
+    }
+  };
+};
+
+const scheduleResubscribe = (): void => {
+  if (resubscribeTimer !== null) {
+    window.clearTimeout(resubscribeTimer);
+  }
+  resubscribeTimer = window.setTimeout(() => {
+    resubscribeTimer = null;
+    openStream();
+  }, RESUBSCRIBE_DEBOUNCE_MS);
 };
 
 export const initCanvas = (el: HTMLCanvasElement): void => {
@@ -113,8 +221,7 @@ export const setOffset = (x: number, y: number, resubscribe = true): void => {
   state.offsetX = Math.round(x);
   state.offsetY = Math.round(y);
   if (resubscribe) {
-    ensurePolling();
-    void refreshVisible();
+    scheduleResubscribe();
   }
   render();
   window.dispatchEvent(
@@ -291,9 +398,10 @@ const render = (): void => {
 };
 
 export const unsubscribeAll = (): void => {
-  if (pollTimer !== null) {
-    window.clearInterval(pollTimer);
-    pollTimer = null;
+  closeStream();
+  if (resubscribeTimer !== null) {
+    window.clearTimeout(resubscribeTimer);
+    resubscribeTimer = null;
   }
   if (canvas) {
     canvas.removeEventListener('click', handleClick);
