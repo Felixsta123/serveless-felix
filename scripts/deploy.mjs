@@ -2,25 +2,14 @@ import { spawn } from 'node:child_process';
 import { functions, getEnvironmentValues } from './functions.mjs';
 import { resolveProjectId } from './lib/projects.mjs';
 
-const [, , environment, functionName] = process.argv;
+const [, , functionName] = process.argv;
 const region = 'europe-west1';
 const MAX_DEPLOY_ATTEMPTS = Number(process.env.DEPLOY_MAX_ATTEMPTS ?? 5);
 const BASE_RETRY_DELAY_MS = Number(process.env.DEPLOY_RETRY_DELAY_MS ?? 15000);
 const RETRIABLE_DEPLOY_ERROR = /unable to queue the operation|status=\[409\]/i;
 
-const projectId = resolveProjectId(
-  environment,
-  'Usage: node scripts/deploy.mjs <dev|prd> [functionName]',
-);
-
-const environmentValues = (() => {
-  try {
-    return getEnvironmentValues(environment);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  }
-})();
+const projectId = resolveProjectId();
+const environmentValues = getEnvironmentValues();
 
 const names = functionName ? [functionName] : Object.keys(functions);
 

@@ -1,12 +1,7 @@
 import { resolveProjectId } from './lib/projects.mjs';
 import { runCapture, runInherit } from './lib/gcloud.mjs';
 
-const [, , environment] = process.argv;
-
-const projectId = resolveProjectId(
-  environment,
-  'Usage: node scripts/deploy-ttl.mjs <dev|prd>',
-);
+const projectId = resolveProjectId();
 const database = '(default)';
 
 const ttlTargets = [

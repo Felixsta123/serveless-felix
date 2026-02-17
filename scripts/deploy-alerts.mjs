@@ -5,12 +5,8 @@ import https from 'node:https';
 import { resolveProjectId } from './lib/projects.mjs';
 import { runCapture, runInherit } from './lib/gcloud.mjs';
 
-const [, , environment] = process.argv;
-
-const projectId = resolveProjectId(
-  environment,
-  'Usage: node scripts/deploy-alerts.mjs <dev|prd>',
-);
+const environment = 'dev';
+const projectId = resolveProjectId();
 const templatePath = path.resolve('monitoring', 'alert-policies.core.template.json');
 const renderedPath = path.resolve('monitoring', `alert-policies.${environment}.json`);
 const discordWebhookUrl = process.env.ALERT_DISCORD_WEBHOOK_URL?.trim() ?? '';

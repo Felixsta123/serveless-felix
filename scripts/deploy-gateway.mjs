@@ -3,15 +3,11 @@ import path from 'node:path';
 import { resolveProjectId } from './lib/projects.mjs';
 import { exists, runInherit, runResult } from './lib/gcloud.mjs';
 
-const [, , environment] = process.argv;
 const region = 'europe-west1';
-
-const projectId = resolveProjectId(
-  environment,
-  'Usage: node scripts/deploy-gateway.mjs <dev|prd>',
-);
-const apiId = `serverless-felix-${environment}`;
-const gatewayId = `serverless-felix-${environment}-gateway`;
+const environment = 'dev';
+const projectId = resolveProjectId();
+const apiId = 'serverless-felix-dev';
+const gatewayId = 'serverless-felix-dev-gateway';
 const configId = `config-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
 const serviceAccount = `api-gateway-invoker@${projectId}.iam.gserviceaccount.com`;
 

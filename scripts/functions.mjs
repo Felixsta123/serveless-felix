@@ -1,25 +1,10 @@
-const configByEnvironment = {
-  dev: {
-    WEB_APP_URL: 'https://serverless-felix-dev.web.app',
-    DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
-    SNAPSHOT_BUCKET: 'serverless-felix-dev-snapshots',
-  },
-  prd: {
-    WEB_APP_URL: 'https://serverless-felix-prd.web.app',
-    DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
-    SNAPSHOT_BUCKET: 'serverless-felix-prd-snapshots',
-  },
+const devConfig = {
+  WEB_APP_URL: 'https://serverless-felix-dev.web.app',
+  DISCORD_ADMIN_ROLE_ID: '1471881086521839656',
+  SNAPSHOT_BUCKET: 'serverless-felix-dev-snapshots',
 };
 
-const readEnvironmentValues = (environment) => {
-  const values = configByEnvironment[environment];
-  if (!values) {
-    throw new Error(`Unknown environment: ${environment}`);
-  }
-  return values;
-};
-
-export const getEnvironmentValues = (environment) => readEnvironmentValues(environment);
+export const getEnvironmentValues = () => devConfig;
 
 export const functions = {
   discordProxy: {

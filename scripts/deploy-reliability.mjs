@@ -1,13 +1,8 @@
 import { resolveProjectId } from './lib/projects.mjs';
 import { runCapture, runInherit, runResult } from './lib/gcloud.mjs';
 
-const [, , environment] = process.argv;
 const region = 'europe-west1';
-
-const projectId = resolveProjectId(
-  environment,
-  'Usage: node scripts/deploy-reliability.mjs <dev|prd>',
-);
+const projectId = resolveProjectId();
 const workers = [
   'workerdraw',
   'workerdiscord',

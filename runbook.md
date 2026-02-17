@@ -1,25 +1,23 @@
-# Serverless - Single Runbook
+# Serverless - Dev Runbook
 
-This runbook is the only doc to set up and deploy production with the same stack as dev.
+This runbook is the single setup/deploy reference for the `serverless-felix-dev` environment.
 
 ## 1. Prerequisites
 
 - `gcloud` installed and authenticated
 - `node` + `npm` installed
-- Access to:
-  - `serverless-felix-dev`
-  - `serverless-felix-prd`
+- Access to project: `serverless-felix-dev`
 - Discord app credentials available:
   - public key
   - client id
   - client secret
 - Firebase CLI is not required globally (we use `npx firebase-tools`)
 
-## 2. Set Environment Variables (local shell)
+## 2. Set Environment Variables
 
 ```bash
-export ENV=prd
-export PROJECT_ID=serverless-felix-prd
+export ENV=dev
+export PROJECT_ID=serverless-felix-dev
 export REGION=europe-west1
 
 export DISCORD_PUBLIC_KEY="<your_discord_public_key>"
@@ -80,7 +78,7 @@ gcloud firestore databases create \
 ### Buckets
 
 ```bash
-export SNAPSHOT_BUCKET="serverless-felix-$ENV-snapshots"
+export SNAPSHOT_BUCKET="serverless-felix-dev-snapshots"
 
 gcloud storage buckets create "gs://$SNAPSHOT_BUCKET" \
   --location="$REGION" \
@@ -172,7 +170,7 @@ do
 done
 ```
 
-Add/rotate versions:
+Add versions:
 
 ```bash
 echo -n "$DISCORD_PUBLIC_KEY" | gcloud secrets versions add discord_public_key --project "$PROJECT_ID" --data-file=-
@@ -180,7 +178,7 @@ echo -n "$DISCORD_CLIENT_ID" | gcloud secrets versions add discord_client_id --p
 echo -n "$DISCORD_CLIENT_SECRET" | gcloud secrets versions add discord_client_secret --project "$PROJECT_ID" --data-file=-
 ```
 
-`oauth_redirect_uri` must match the active prod gateway URL `/oauth`.
+`oauth_redirect_uri` must match the active dev gateway URL `/oauth`.
 Set it after gateway creation in step 8.
 
 ## 7. Install Dependencies
@@ -192,69 +190,55 @@ npm --prefix web ci
 
 ## 8. Deploy Backend + Gateway + Reliability + Monitoring
 
-Deploy functions first:
-
 ```bash
-npm run deploy:prd
-```
-
-Deploy API Gateway:
-
-```bash
-npm run deploy:prd:gateway
+npm run deploy:dev
+npm run deploy:dev:gateway
 ```
 
 Get gateway hostname and set OAuth redirect secret:
 
 ```bash
-export PRD_GATEWAY_HOST=$(gcloud api-gateway gateways describe serverless-felix-prd-gateway \
+export DEV_GATEWAY_HOST=$(gcloud api-gateway gateways describe serverless-felix-dev-gateway \
   --location="$REGION" \
   --project="$PROJECT_ID" \
   --format='value(defaultHostname)')
 
-export OAUTH_REDIRECT_URI="https://${PRD_GATEWAY_HOST}/oauth"
+export OAUTH_REDIRECT_URI="https://${DEV_GATEWAY_HOST}/oauth"
 echo -n "$OAUTH_REDIRECT_URI" | gcloud secrets versions add oauth_redirect_uri --project "$PROJECT_ID" --data-file=-
 ```
 
-Redeploy only `oauthProxy` and `workerOAuth` so they read latest secret value:
+Redeploy OAuth components so they read latest secret value:
 
 ```bash
-npm run deploy:prd:oauthProxy
-npm run deploy:prd:workerOAuth
+npm run deploy:dev:oauthProxy
+npm run deploy:dev:workerOAuth
 ```
 
 Apply reliability + TTL + monitoring:
 
 ```bash
-npm run deploy:prd:reliability
-npm run deploy:prd:ttl
-npm run deploy:prd:monitoring
-ALERT_DISCORD_WEBHOOK_URL="$ALERT_DISCORD_WEBHOOK_URL" npm run deploy:prd:alerts
+npm run deploy:dev:reliability
+npm run deploy:dev:ttl
+npm run deploy:dev:monitoring
+ALERT_DISCORD_WEBHOOK_URL="$ALERT_DISCORD_WEBHOOK_URL" npm run deploy:dev:alerts
 ```
-
-Notes:
-
-- `deploy:prd:alerts` will create or reuse a Monitoring notification channel (`webhook_tokenauth`) from `ALERT_DISCORD_WEBHOOK_URL`.
-- The same channel is attached to all alert policies.
-- If `ALERT_DISCORD_WEBHOOK_URL` is not set, alerts are still deployed and existing channels are preserved.
 
 ## 9. Deploy Web
 
 The web app defaults to dev values if `VITE_*` is not set.
-Always build prod with explicit prod vars:
 
 ```bash
-export VITE_API_GATEWAY_URL="https://${PRD_GATEWAY_HOST}"
-export VITE_FIREBASE_PROJECT_ID="serverless-felix-prd"
-export VITE_FIREBASE_AUTH_DOMAIN="serverless-felix-prd.firebaseapp.com"
-export VITE_FIREBASE_STORAGE_BUCKET="serverless-felix-prd.firebasestorage.app"
-export VITE_FIREBASE_MESSAGING_SENDER_ID="<prd_sender_id>"
-export VITE_FIREBASE_APP_ID="<prd_app_id>"
-export VITE_FIREBASE_API_KEY="<prd_web_api_key>"
+export VITE_API_GATEWAY_URL="https://${DEV_GATEWAY_HOST}"
+export VITE_FIREBASE_PROJECT_ID="serverless-felix-dev"
+export VITE_FIREBASE_AUTH_DOMAIN="serverless-felix-dev.firebaseapp.com"
+export VITE_FIREBASE_STORAGE_BUCKET="serverless-felix-dev.firebasestorage.app"
+export VITE_FIREBASE_MESSAGING_SENDER_ID="<dev_sender_id>"
+export VITE_FIREBASE_APP_ID="<dev_app_id>"
+export VITE_FIREBASE_API_KEY="<dev_web_api_key>"
 
 npm --prefix web run build
 npx --yes firebase-tools deploy \
-  --project serverless-felix-prd \
+  --project serverless-felix-dev \
   --only firestore:rules,firestore:indexes,hosting \
   --config web/firebase.json \
   --non-interactive
@@ -263,10 +247,10 @@ npx --yes firebase-tools deploy \
 ## 10. Discord Finalization
 
 - In Discord Developer Portal:
-  - Interactions endpoint = `https://${PRD_GATEWAY_HOST}/discord`
-  - OAuth redirect URI includes `https://${PRD_GATEWAY_HOST}/oauth`
+  - Interactions endpoint = `https://${DEV_GATEWAY_HOST}/discord`
+  - OAuth redirect URI includes `https://${DEV_GATEWAY_HOST}/oauth`
 
-- Register slash commands (from your machine):
+- Register slash commands:
 
 ```bash
 DISCORD_APP_ID="<app_id>" DISCORD_BOT_TOKEN="<bot_token>" DISCORD_GUILD_ID="<guild_id>" npm run discord:commands
@@ -277,32 +261,7 @@ DISCORD_APP_ID="<app_id>" DISCORD_BOT_TOKEN="<bot_token>" DISCORD_GUILD_ID="<gui
 ```bash
 gcloud functions list --v2 --regions="$REGION" --project="$PROJECT_ID"
 gcloud api-gateway gateways list --location="$REGION" --project="$PROJECT_ID"
-gcloud pubsub subscriptions list --project="$PROJECT_ID" \
-  --format='table(name,deadLetterPolicy.deadLetterTopic,deadLetterPolicy.maxDeliveryAttempts)'
-gcloud firestore indexes fields describe expiresAt --project="$PROJECT_ID" --database='(default)' --collection-group=sessions --format='value(ttlConfig.state)'
-gcloud firestore indexes fields describe createdAt --project="$PROJECT_ID" --database='(default)' --collection-group=idempotency --format='value(ttlConfig.state)'
-gcloud monitoring dashboards list --project="$PROJECT_ID"
-gcloud monitoring policies list --project="$PROJECT_ID"
-gcloud monitoring policies list --project="$PROJECT_ID" --format='table(displayName,notificationChannels)'
-```
-
-Expected:
-
-- 12 functions active
-- gateway active
-- Eventarc worker subscriptions have DLQ topic + `maxDeliveryAttempts=10`
-- both TTL fields are `ACTIVE`
-- dashboard + alert policies exist
-- each alert policy has a Discord notification channel attached
-
-## 12. Minimal Smoke Test
-
-1. Open prod web URL and login with Discord.
-2. Draw a pixel; confirm it appears.
-3. Run Discord `/draw`, `/canvas`, `/snapshot`, `/session pause|start|reset`.
-4. Check logs:
-
-```bash
-gcloud logging read 'resource.type="cloud_run_revision" AND jsonPayload.event="worker_draw_processed"' \
-  --project="$PROJECT_ID" --limit=10 --freshness=1d
+gcloud pubsub subscriptions list --project="$PROJECT_ID"
+gcloud monitoring dashboards list --project "$PROJECT_ID"
+gcloud monitoring policies list --project "$PROJECT_ID"
 ```

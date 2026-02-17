@@ -3,12 +3,8 @@ import path from 'node:path';
 import { resolveProjectId } from './lib/projects.mjs';
 import { runCapture, runInherit } from './lib/gcloud.mjs';
 
-const [, , environment] = process.argv;
-
-const projectId = resolveProjectId(
-  environment,
-  'Usage: node scripts/deploy-monitoring.mjs <dev|prd>',
-);
+const environment = 'dev';
+const projectId = resolveProjectId();
 const displayName = `Serverless Felix - Core Ops (${environment})`;
 const templatePath = path.resolve('monitoring', 'dashboard.core.template.json');
 const renderedPath = path.resolve('monitoring', `dashboard.${environment}.json`);

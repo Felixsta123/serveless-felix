@@ -3,7 +3,6 @@ name: Deploy
 on:
   push:
     branches:
-      - main
       - dev
 
 concurrency:
@@ -158,80 +157,41 @@ jobs:
         if: steps.plan.outputs.has_functions == 'true' || steps.plan.outputs.gateway_changed == 'true' || steps.plan.outputs.monitoring_changed == 'true' || steps.plan.outputs.reliability_changed == 'true' || steps.plan.outputs.ttl_changed == 'true' || steps.plan.outputs.web_changed == 'true'
         run: echo "GCP_KEYFILE_PATH=${{ env.GOOGLE_APPLICATION_CREDENTIALS }}" >> $GITHUB_ENV
 
-      - name: Deploy changed functions to Dev
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.has_functions == 'true'
+      - name: Deploy changed functions
+        if: steps.plan.outputs.has_functions == 'true'
         shell: bash
         run: |
           set -euo pipefail
           for fn in ${{ steps.plan.outputs.functions }}; do
-            node scripts/deploy.mjs dev "$fn"
+            node scripts/deploy.mjs "$fn"
           done
 
-      - name: Deploy API Gateway (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.gateway_changed == 'true'
+      - name: Deploy API Gateway
+        if: steps.plan.outputs.gateway_changed == 'true'
         run: npm run deploy:dev:gateway
 
-      - name: Deploy Monitoring Dashboard (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.monitoring_changed == 'true'
+      - name: Deploy Monitoring Dashboard
+        if: steps.plan.outputs.monitoring_changed == 'true'
         run: npm run deploy:dev:monitoring
 
-      - name: Deploy Monitoring Alerts (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.monitoring_changed == 'true'
+      - name: Deploy Monitoring Alerts
+        if: steps.plan.outputs.monitoring_changed == 'true'
         run: npm run deploy:dev:alerts
 
-      - name: Apply Reliability Hardening (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.reliability_changed == 'true'
+      - name: Apply Reliability Hardening
+        if: steps.plan.outputs.reliability_changed == 'true'
         run: npm run deploy:dev:reliability
 
-      - name: Apply Firestore TTL (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.ttl_changed == 'true'
+      - name: Apply Firestore TTL
+        if: steps.plan.outputs.ttl_changed == 'true'
         run: npm run deploy:dev:ttl
 
-      - name: Build Web App (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
+      - name: Build Web App
+        if: steps.plan.outputs.web_changed == 'true'
         run: |
           npm --prefix web ci
           npm --prefix web run build
 
-      - name: Deploy Web App (Dev)
-        if: github.ref == 'refs/heads/dev' && steps.plan.outputs.web_changed == 'true'
+      - name: Deploy Web App
+        if: steps.plan.outputs.web_changed == 'true'
         run: npx --yes firebase-tools deploy --project serverless-felix-dev --only hosting --config web/firebase.json --non-interactive
-
-      - name: Deploy changed functions to Prod
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.has_functions == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          for fn in ${{ steps.plan.outputs.functions }}; do
-            node scripts/deploy.mjs prd "$fn"
-          done
-
-      - name: Deploy API Gateway (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.gateway_changed == 'true'
-        run: npm run deploy:prd:gateway
-
-      - name: Deploy Monitoring Dashboard (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.monitoring_changed == 'true'
-        run: npm run deploy:prd:monitoring
-
-      - name: Deploy Monitoring Alerts (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.monitoring_changed == 'true'
-        run: npm run deploy:prd:alerts
-
-      - name: Apply Reliability Hardening (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.reliability_changed == 'true'
-        run: npm run deploy:prd:reliability
-
-      - name: Apply Firestore TTL (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.ttl_changed == 'true'
-        run: npm run deploy:prd:ttl
-
-      - name: Build Web App (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'
-        run: |
-          npm --prefix web ci
-          npm --prefix web run build
-
-      - name: Deploy Web App (Prod)
-        if: github.ref == 'refs/heads/main' && steps.plan.outputs.web_changed == 'true'
-        run: npx --yes firebase-tools deploy --project serverless-felix-prd --only hosting --config web/firebase.json --non-interactive
