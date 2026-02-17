@@ -12,6 +12,7 @@ const database = '(default)';
 const ttlTargets = [
   { collectionGroup: 'sessions', field: 'expiresAt' },
   { collectionGroup: 'idempotency', field: 'createdAt' },
+  { collectionGroup: 'requestResponses', field: 'expiresAt' },
 ];
 
 for (const target of ttlTargets) {

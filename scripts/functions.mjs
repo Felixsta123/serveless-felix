@@ -35,6 +35,7 @@ export const functions = {
     serviceAccount: 'proxy',
     timeoutSeconds: 540,
     envByEnvironmentFromConfig: ['WEB_APP_URL'],
+    envFromProcess: ['REQUEST_RESPONSE_TTL_SECONDS'],
   },
   oauthProxy: {
     trigger: 'http',
@@ -81,5 +82,11 @@ export const functions = {
       DISCORD_CLIENT_ID: 'discord_client_id',
       DISCORD_CLIENT_SECRET: 'discord_client_secret',
     },
+  },
+  workerWebRead: {
+    trigger: 'topic',
+    topic: 'jobs',
+    serviceAccount: 'worker',
+    envFromProcess: ['CANVAS_CHUNK_SIZE', 'REQUEST_RESPONSE_TTL_SECONDS'],
   },
 };

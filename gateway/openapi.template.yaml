@@ -65,6 +65,37 @@ paths:
       responses:
         '204':
           description: No Content
+  /web/request/{requestId}:
+    get:
+      summary: Web proxy request status
+      operationId: webGetRequestStatus
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        path_translation: APPEND_PATH_TO_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+      responses:
+        '200':
+          description: OK
+    options:
+      summary: Web proxy request status CORS preflight
+      operationId: webOptionsRequestStatus
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+        path_translation: APPEND_PATH_TO_ADDRESS
+        jwt_audience: https://{{REGION}}-{{PROJECT_ID}}.cloudfunctions.net/webProxy
+      responses:
+        '204':
+          description: No Content
   /oauth:
     get:
       summary: OAuth proxy

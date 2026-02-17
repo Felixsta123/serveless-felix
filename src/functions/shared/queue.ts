@@ -68,13 +68,41 @@ export type OAuthExchangeJobPayload = JobMeta & {
   redirectUri: string;
 };
 
+export type WebActiveAreaRequestedJobPayload = JobMeta & {
+  kind: 'web.activeArea.requested';
+  receivedAt: string;
+  userId: string;
+  responseRequestId: string;
+};
+
+export type WebCanvasRequestedJobPayload = JobMeta & {
+  kind: 'web.canvas.requested';
+  receivedAt: string;
+  userId: string;
+  responseRequestId: string;
+  offsetX: number;
+  offsetY: number;
+  size: number;
+};
+
+export type WebRealtimeTokenRequestedJobPayload = JobMeta & {
+  kind: 'web.realtimeToken.requested';
+  receivedAt: string;
+  userId: string;
+  discordUsername: string;
+  responseRequestId: string;
+};
+
 export type JobPayload =
   | DrawJobPayload
   | CanvasJobPayload
   | SessionJobPayload
   | SnapshotJobPayload
   | DiscordFollowupJobPayload
-  | OAuthExchangeJobPayload;
+  | OAuthExchangeJobPayload
+  | WebActiveAreaRequestedJobPayload
+  | WebCanvasRequestedJobPayload
+  | WebRealtimeTokenRequestedJobPayload;
 
 const pubsub = new PubSub();
 

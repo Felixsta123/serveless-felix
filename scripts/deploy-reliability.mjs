@@ -8,7 +8,7 @@ const projectId = resolveProjectId(
   environment,
   'Usage: node scripts/deploy-reliability.mjs <dev|prd>',
 );
-const workers = ['workerdraw', 'workerdiscord', 'workeroauth', 'workersnapshot'];
+const workers = ['workerdraw', 'workerdiscord', 'workeroauth', 'workersnapshot', 'workerwebread'];
 const dlqTopic = 'jobs-dlq';
 const dlqSubscription = 'jobs-dlq-sub';
 
