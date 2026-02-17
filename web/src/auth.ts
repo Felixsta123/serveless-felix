@@ -14,6 +14,15 @@ export type SessionReady = {
   user: User;
 };
 
+type SessionPollResult = SessionReady | null;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const nextDelayMs = (previous: number): number => Math.min(15000, Math.round(previous * 1.8));
+
 export const getUser = (): User | null => {
   const data = localStorage.getItem(STORAGE_KEYS.user);
   if (!data) return null;
@@ -36,30 +45,48 @@ export const startLogin = (): void => {
   window.location.href = `${config.apiGateway}/oauth?action=login`;
 };
 
-export const pollSession = async (state: string): Promise<SessionReady | null> => {
-  const maxAttempts = 30;
-  const interval = 1000;
+export const pollSession = async (state: string): Promise<SessionPollResult> => {
+  const maxAttempts = 20;
+  let delayMs = 1000;
 
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetch(`${config.apiGateway}/web/session?state=${state}`, {
         credentials: 'include',
       });
-      const data = await res.json();
 
-      if (data.status === 'ready') {
+      if (res.status === 429) {
+        const retryAfterHeader = res.headers.get('retry-after');
+        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+        const retryDelayMs =
+          Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+            ? Math.floor(retryAfterSeconds * 1000)
+            : nextDelayMs(delayMs);
+        console.warn(`Session polling throttled (429), retry in ${retryDelayMs}ms`);
+        await sleep(retryDelayMs);
+        delayMs = nextDelayMs(retryDelayMs);
+        continue;
+      }
+
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      const status = typeof data.status === 'string' ? data.status : null;
+
+      if (status === 'ready' && data.user && typeof data.user === 'object') {
         return {
-          user: data.user,
+          user: data.user as User,
         };
       }
-      if (data.status === 'error') {
+      if (status === 'error') {
         console.error('OAuth error:', data.error);
         return null;
       }
-      await new Promise((r) => setTimeout(r, interval));
+
+      await sleep(delayMs);
+      delayMs = nextDelayMs(delayMs);
     } catch (err) {
       console.error('Poll error:', err);
-      await new Promise((r) => setTimeout(r, interval));
+      await sleep(delayMs);
+      delayMs = nextDelayMs(delayMs);
     }
   }
   return null;

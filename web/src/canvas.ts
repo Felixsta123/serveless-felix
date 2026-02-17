@@ -1,5 +1,5 @@
 import { config } from './config';
-import { getActiveArea as fetchActiveArea } from './api';
+import { getActiveArea as fetchActiveArea, getCanvasWindow } from './api';
 import type { ActiveArea, Pixel } from './api';
 
 type CanvasState = {
@@ -43,8 +43,11 @@ let panStartMouseY = 0;
 let panStartOffsetX = 0;
 let panStartOffsetY = 0;
 let lastStreamErrorAt = 0;
+let streamErrorCount = 0;
+let fallbackPollTimer: number | null = null;
 
 const RESUBSCRIBE_DEBOUNCE_MS = 120;
+const FALLBACK_POLL_INTERVAL_MS = 2500;
 const DRAG_THRESHOLD_PX = 3;
 const KEY_PAN_STEP = 5;
 const CANVAS_BG_COLOR = '#09090b';
@@ -115,6 +118,40 @@ const applyPixelUpdate = (pixel: Pixel): void => {
   window.dispatchEvent(new CustomEvent('canvasUpdated'));
 };
 
+const refreshVisibleFromApi = async (): Promise<void> => {
+  try {
+    const bounds = getWindowBounds();
+    const payload = await getCanvasWindow(bounds.minX, bounds.minY, bounds.size);
+    applySnapshot({
+      ...payload,
+      activeArea: {
+        ...payload.activeArea,
+        roundId: payload.roundId,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: message } }));
+  }
+};
+
+const stopFallbackPolling = (): void => {
+  if (fallbackPollTimer !== null) {
+    window.clearInterval(fallbackPollTimer);
+    fallbackPollTimer = null;
+  }
+};
+
+const ensureFallbackPolling = (): void => {
+  if (fallbackPollTimer !== null) {
+    return;
+  }
+  void refreshVisibleFromApi();
+  fallbackPollTimer = window.setInterval(() => {
+    void refreshVisibleFromApi();
+  }, FALLBACK_POLL_INTERVAL_MS);
+};
+
 const closeStream = (): void => {
   if (stream) {
     stream.close();
@@ -144,6 +181,8 @@ const openStream = (): void => {
     if (!payload) {
       return;
     }
+    streamErrorCount = 0;
+    stopFallbackPolling();
     applySnapshot(payload);
   });
 
@@ -177,6 +216,7 @@ const openStream = (): void => {
   });
 
   stream.onerror = () => {
+    streamErrorCount += 1;
     const now = Date.now();
     if (now - lastStreamErrorAt > 5000) {
       lastStreamErrorAt = now;
@@ -185,6 +225,9 @@ const openStream = (): void => {
           detail: { error: 'Flux temps réel interrompu, reconnexion automatique...' },
         }),
       );
+    }
+    if (streamErrorCount >= 3) {
+      ensureFallbackPolling();
     }
   };
 };
@@ -399,6 +442,7 @@ const render = (): void => {
 
 export const unsubscribeAll = (): void => {
   closeStream();
+  stopFallbackPolling();
   if (resubscribeTimer !== null) {
     window.clearTimeout(resubscribeTimer);
     resubscribeTimer = null;
