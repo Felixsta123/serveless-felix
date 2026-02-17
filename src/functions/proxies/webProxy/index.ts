@@ -539,6 +539,7 @@ export const webProxy: HttpFunction = async (req, res) =>
           traceId: requestContext.traceId,
           source: 'web',
           userId: session.discordUserId,
+          authorUsername: session.discordUsername,
           x,
           y,
           color,

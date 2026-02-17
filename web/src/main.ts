@@ -70,7 +70,11 @@ const updatePixelInfo = (x: number, y: number, pixel: Pixel | null): void => {
   coordsEl.textContent = `Position : (${x}, ${y})`;
 
   if (pixel) {
-    authorEl.textContent = `Auteur : ${pixel.authorId}`;
+    const authorLabel =
+      typeof pixel.authorUsername === 'string' && pixel.authorUsername.trim() !== ''
+        ? pixel.authorUsername
+        : pixel.authorId;
+    authorEl.textContent = `Auteur : ${authorLabel}`;
     updatedEl.textContent = pixel.updatedAt
       ? `Mis à jour : ${new Date(pixel.updatedAt).toLocaleString('fr-FR')}`
       : 'Mis à jour : Inconnue';
@@ -145,6 +149,7 @@ const handleDraw = async (): Promise<void> => {
       y: selected.y,
       color,
       authorId: currentUser.id,
+      authorUsername: currentUser.username,
       updatedAt: new Date().toISOString(),
     });
     await drawPixel(selected.x, selected.y, color);

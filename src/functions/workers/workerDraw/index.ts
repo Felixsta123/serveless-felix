@@ -112,6 +112,7 @@ export const workerDraw = async (event: CloudEvent<PubSubEnvelope>) =>
           color: job.color,
           updatedAt: timestamp,
           authorId: job.userId,
+          authorUsername: job.authorUsername ?? job.userId,
           ...(sessionRoundId ? { roundId: sessionRoundId } : {}),
         },
         { merge: true },

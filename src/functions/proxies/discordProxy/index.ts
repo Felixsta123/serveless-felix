@@ -178,6 +178,7 @@ export const discordProxy: HttpFunction = async (req, res) =>
         traceId: requestContext.traceId,
         source: 'discord',
         userId,
+        authorUsername: interaction.member?.user?.username ?? interaction.user?.username,
         x: xValue,
         y: yValue,
         color: colorValue,

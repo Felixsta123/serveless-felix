@@ -112,6 +112,7 @@ export type Pixel = {
   y: number;
   color: string;
   authorId: string;
+  authorUsername?: string | null;
   updatedAt: string | null;
 };
 

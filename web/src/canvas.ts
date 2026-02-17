@@ -106,11 +106,16 @@ const parsePixel = (data: Record<string, unknown>): Pixel | null => {
   if (x === null || y === null || !color || !authorId) {
     return null;
   }
+  const authorUsername =
+    typeof data.authorUsername === 'string' && data.authorUsername.trim() !== ''
+      ? data.authorUsername
+      : null;
   return {
     x,
     y,
     color,
     authorId,
+    authorUsername,
     updatedAt: toIso(data.updatedAt),
   };
 };

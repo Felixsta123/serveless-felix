@@ -21,6 +21,7 @@ export type DrawJobPayload = JobMeta & {
   receivedAt: string;
   source: 'discord' | 'web';
   userId: string;
+  authorUsername?: string;
   x: number;
   y: number;
   color: string;

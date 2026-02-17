@@ -41,6 +41,7 @@ type PixelRecord = {
   y: number;
   color: string;
   authorId: string;
+  authorUsername: string | null;
   updatedAt: string | null;
 };
 
@@ -173,11 +174,16 @@ const loadCanvasWindow = async (
       if (!color || !authorId) {
         continue;
       }
+      const authorUsername =
+        typeof data.authorUsername === 'string' && data.authorUsername.trim() !== ''
+          ? data.authorUsername
+          : null;
       dedup.set(`${x}_${y}`, {
         x,
         y,
         color,
         authorId,
+        authorUsername,
         updatedAt: toTimestampIso(data.updatedAt),
       });
     }
