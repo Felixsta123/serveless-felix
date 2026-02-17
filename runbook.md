@@ -26,6 +26,7 @@ export DISCORD_PUBLIC_KEY="<your_discord_public_key>"
 export DISCORD_CLIENT_ID="<your_discord_client_id>"
 export DISCORD_CLIENT_SECRET="<your_discord_client_secret>"
 export DISCORD_ALLOWED_GUILD_ID="<optional_guild_id>"
+export ALERT_DISCORD_WEBHOOK_URL="<discord_webhook_url>"
 
 # Optional tuning
 export RATE_LIMIT_PER_MINUTE=20
@@ -228,8 +229,14 @@ Apply reliability + TTL + monitoring:
 npm run deploy:prd:reliability
 npm run deploy:prd:ttl
 npm run deploy:prd:monitoring
-npm run deploy:prd:alerts
+ALERT_DISCORD_WEBHOOK_URL="$ALERT_DISCORD_WEBHOOK_URL" npm run deploy:prd:alerts
 ```
+
+Notes:
+
+- `deploy:prd:alerts` will create or reuse a Monitoring notification channel (`webhook_tokenauth`) from `ALERT_DISCORD_WEBHOOK_URL`.
+- The same channel is attached to all alert policies.
+- If `ALERT_DISCORD_WEBHOOK_URL` is not set, alerts are still deployed and existing channels are preserved.
 
 ## 9. Deploy Web
 
@@ -276,6 +283,7 @@ gcloud firestore indexes fields describe expiresAt --project="$PROJECT_ID" --dat
 gcloud firestore indexes fields describe createdAt --project="$PROJECT_ID" --database='(default)' --collection-group=idempotency --format='value(ttlConfig.state)'
 gcloud monitoring dashboards list --project="$PROJECT_ID"
 gcloud monitoring policies list --project="$PROJECT_ID"
+gcloud monitoring policies list --project="$PROJECT_ID" --format='table(displayName,notificationChannels)'
 ```
 
 Expected:
@@ -285,6 +293,7 @@ Expected:
 - Eventarc worker subscriptions have DLQ topic + `maxDeliveryAttempts=10`
 - both TTL fields are `ACTIVE`
 - dashboard + alert policies exist
+- each alert policy has a Discord notification channel attached
 
 ## 12. Minimal Smoke Test
 
