@@ -1,5 +1,5 @@
 import { CloudEvent } from '@google-cloud/functions-framework';
-import { Firestore } from '@google-cloud/firestore';
+import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
 import { PNG } from 'pngjs';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
@@ -19,6 +19,7 @@ import { runWithSpan } from '../../shared/tracing.js';
 const firestore = new Firestore();
 const storage = new Storage();
 const activeAreaRef = firestore.doc('activeArea/current');
+const latestSnapshotRef = firestore.doc('snapshots/latest');
 
 const CHUNK_SIZE = toPositiveInt(process.env.CANVAS_CHUNK_SIZE, 50);
 const SNAPSHOT_BUCKET = process.env.SNAPSHOT_BUCKET ?? '';
@@ -222,7 +223,7 @@ const renderSnapshotPng = (
 const uploadSnapshot = async (
   pngBuffer: Buffer,
   userId: string,
-): Promise<{ url: string }> => {
+): Promise<{ url: string; objectPath: string }> => {
   if (!SNAPSHOT_BUCKET) {
     throw new Error('SNAPSHOT_BUCKET is not configured.');
   }
@@ -248,7 +249,7 @@ const uploadSnapshot = async (
     expires: expiresMs,
   });
 
-  return { url };
+  return { url, objectPath };
 };
 
 export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) =>
@@ -321,6 +322,21 @@ export const workerSnapshot = async (event: CloudEvent<PubSubEnvelope>) =>
 
     const rendered = renderSnapshotPng(loaded);
     const uploaded = await uploadSnapshot(rendered.buffer, job.userId);
+    await latestSnapshotRef.set(
+      {
+        objectPath: uploaded.objectPath,
+        roundId: loaded.roundId,
+        minX: loaded.minX,
+        minY: loaded.minY,
+        maxX: loaded.maxX,
+        maxY: loaded.maxY,
+        width: rendered.width,
+        height: rendered.height,
+        pixels: loaded.pixels.length,
+        updatedAt: Timestamp.now(),
+      },
+      { merge: true },
+    );
 
     await postDiscordFollowup(
       job.interaction.applicationId,

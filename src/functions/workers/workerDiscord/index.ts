@@ -1,5 +1,6 @@
 import { CloudEvent } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
+import { Storage } from '@google-cloud/storage';
 import crypto from 'node:crypto';
 import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { postDiscordFollowup } from '../../shared/discordApi.js';
@@ -13,10 +14,94 @@ import { parseJob } from '../../shared/pubsubJob.js';
 import { runWithSpan } from '../../shared/tracing.js';
 
 const firestore = new Firestore();
+const storage = new Storage();
 const sessionRef = firestore.doc('config/session');
 const activeAreaRef = firestore.doc('activeArea/current');
+const latestSnapshotRef = firestore.doc('snapshots/latest');
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
+const SNAPSHOT_BUCKET = process.env.SNAPSHOT_BUCKET ?? '';
+const SNAPSHOT_URL_TTL_SECONDS = Number(process.env.SNAPSHOT_URL_TTL_SECONDS ?? 86400);
 const makeRoundId = (): string => `round-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+
+type LatestSnapshotDoc = {
+  objectPath?: unknown;
+};
+
+const clampSnapshotTtlSeconds = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 86400;
+  }
+  return Math.min(7 * 24 * 60 * 60, Math.max(300, Math.floor(value)));
+};
+
+const findLatestSnapshotObjectPath = async (): Promise<string | null> => {
+  if (!SNAPSHOT_BUCKET) {
+    return null;
+  }
+
+  const [files] = await storage.bucket(SNAPSHOT_BUCKET).getFiles({ prefix: 'snapshots/' });
+  if (files.length === 0) {
+    return null;
+  }
+
+  let latestName: string | null = null;
+  let latestTimestamp = 0;
+
+  for (const file of files) {
+    const name = typeof file.name === 'string' ? file.name : '';
+    if (!name || name.endsWith('/')) {
+      continue;
+    }
+    const updatedAt = file.metadata?.updated;
+    const updatedMs = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+    const candidateTs = Number.isFinite(updatedMs) ? updatedMs : 0;
+    if (candidateTs >= latestTimestamp) {
+      latestTimestamp = candidateTs;
+      latestName = name;
+    }
+  }
+
+  return latestName;
+};
+
+const getLatestSnapshotUrl = async (): Promise<string | null> => {
+  if (!SNAPSHOT_BUCKET) {
+    return null;
+  }
+
+  const latestSnap = await latestSnapshotRef.get();
+  if (!latestSnap.exists) {
+    return null;
+  }
+
+  const data = latestSnap.data() as LatestSnapshotDoc;
+  const objectPath =
+    typeof data.objectPath === 'string' && data.objectPath.trim()
+      ? data.objectPath
+      : null;
+  let resolvedObjectPath = objectPath;
+  if (!resolvedObjectPath) {
+    resolvedObjectPath = await findLatestSnapshotObjectPath();
+    if (!resolvedObjectPath) {
+      return null;
+    }
+    await latestSnapshotRef.set(
+      {
+        objectPath: resolvedObjectPath,
+        updatedAt: Timestamp.now(),
+      },
+      { merge: true },
+    );
+  }
+
+  const expiresMs = Date.now() + clampSnapshotTtlSeconds(SNAPSHOT_URL_TTL_SECONDS) * 1000;
+  const [url] = await storage.bucket(SNAPSHOT_BUCKET).file(resolvedObjectPath).getSignedUrl({
+    version: 'v4',
+    action: 'read',
+    expires: expiresMs,
+  });
+  return url;
+};
 
 export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) =>
   runWithSpan(
@@ -70,17 +155,34 @@ export const workerDiscord = async (event: CloudEvent<PubSubEnvelope>) =>
 
   if (job.kind === 'canvas.requested') {
     try {
-      const content = WEB_APP_URL
-        ? `🎨 **Pixel Canvas est en ligne !**\n\n🔗 ${WEB_APP_URL}\n\nConnectez-vous avec Discord pour dessiner des pixels !`
-        : '🎨 **Pixel Canvas est en ligne !**\n\nConnectez-vous avec Discord pour dessiner des pixels !';
-      await postDiscordFollowup(
-        interaction.applicationId,
-        interaction.token,
-        content,
-      );
+      const latestSnapshotUrl = await getLatestSnapshotUrl();
+      if (latestSnapshotUrl) {
+        await postDiscordFollowup(interaction.applicationId, interaction.token, {
+          content: WEB_APP_URL
+            ? `🖼️ **Dernier snapshot du canvas**\n\n🔗 Canvas live: ${WEB_APP_URL}`
+            : '🖼️ **Dernier snapshot du canvas**',
+          embeds: [
+            {
+              image: {
+                url: latestSnapshotUrl,
+              },
+            },
+          ],
+        });
+      } else {
+        const content = WEB_APP_URL
+          ? `🖼️ Aucun snapshot disponible pour le moment.\n\n🔗 Canvas live: ${WEB_APP_URL}`
+          : '🖼️ Aucun snapshot disponible pour le moment.';
+        await postDiscordFollowup(
+          interaction.applicationId,
+          interaction.token,
+          content,
+        );
+      }
       logInfo('worker_discord_canvas_followup_sent', {
         ...context,
         userId: job.userId ?? null,
+        hasSnapshot: Boolean(latestSnapshotUrl),
       });
     } catch (error) {
       logError('worker_discord_canvas_followup_failed', error, {

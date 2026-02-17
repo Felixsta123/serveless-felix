@@ -69,7 +69,8 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
     serviceAccount: 'worker',
-    envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID', 'WEB_APP_URL'],
+    envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID', 'WEB_APP_URL', 'SNAPSHOT_BUCKET'],
+    envFromProcess: ['SNAPSHOT_URL_TTL_SECONDS'],
   },
   workerOAuth: {
     trigger: 'topic',
