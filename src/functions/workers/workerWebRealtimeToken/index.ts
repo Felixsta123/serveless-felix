@@ -3,11 +3,11 @@ import { PubSubEnvelope } from '../../shared/pubsub.js';
 import { getWorkerContext, logError, logInfo } from '../../shared/observability.js';
 import { parseJob } from '../../shared/pubsubJob.js';
 import { runWithSpan } from '../../shared/tracing.js';
-import { loadCanvasWindow, writeError, writeReady } from './shared.js';
+import { createRealtimeToken, writeError, writeReady } from '../workerWebRead/shared.js';
 
-export const workerWebRead = async (event: CloudEvent<PubSubEnvelope>) =>
+export const workerWebRealtimeToken = async (event: CloudEvent<PubSubEnvelope>) =>
   runWithSpan(
-    'workerWebRead.pubsub',
+    'workerWebRealtimeToken.pubsub',
     {
       'faas.trigger': 'pubsub',
       'messaging.system': 'pubsub',
@@ -17,25 +17,25 @@ export const workerWebRead = async (event: CloudEvent<PubSubEnvelope>) =>
     async () => {
       const job = parseJob(
         event,
-        'worker_webread_parse_failed',
-        'worker_webread_missing_message_data',
+        'worker_web_realtime_token_parse_failed',
+        'worker_web_realtime_token_missing_message_data',
       );
-      if (!job || job.kind !== 'web.canvas.requested') {
+      if (!job || job.kind !== 'web.realtimeToken.requested') {
         return;
       }
 
       const context = getWorkerContext(event, job);
       try {
-        const payload = await loadCanvasWindow(job);
-        await writeReady(job.responseRequestId, job.userId, job.kind, payload);
-        logInfo('worker_webread_processed', {
+        const token = await createRealtimeToken(job);
+        await writeReady(job.responseRequestId, job.userId, job.kind, { token });
+        logInfo('worker_web_realtime_token_processed', {
           ...context,
           userId: job.userId,
           kind: job.kind,
           responseRequestId: job.responseRequestId,
         });
       } catch (error) {
-        logError('worker_webread_failed', error, {
+        logError('worker_web_realtime_token_failed', error, {
           ...context,
           userId: job.userId,
           kind: job.kind,
@@ -46,7 +46,7 @@ export const workerWebRead = async (event: CloudEvent<PubSubEnvelope>) =>
         try {
           await writeError(job.responseRequestId, job.userId, job.kind, message);
         } catch (writeErrorFailure) {
-          logError('worker_webread_write_error_failed', writeErrorFailure, {
+          logError('worker_web_realtime_token_write_error_failed', writeErrorFailure, {
             ...context,
             userId: job.userId,
             kind: job.kind,

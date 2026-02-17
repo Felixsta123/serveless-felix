@@ -1,4 +1,4 @@
-# Serverless Felix - Single Runbook (Dev -> Prod)
+# Serverless - Single Runbook
 
 This runbook is the only doc to set up and deploy production with the same stack as dev.
 
@@ -288,7 +288,7 @@ gcloud monitoring policies list --project="$PROJECT_ID" --format='table(displayN
 
 Expected:
 
-- 8 functions active
+- 12 functions active
 - gateway active
 - Eventarc worker subscriptions have DLQ topic + `maxDeliveryAttempts=10`
 - both TTL fields are `ACTIVE`

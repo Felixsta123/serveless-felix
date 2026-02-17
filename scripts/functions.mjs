@@ -70,8 +70,19 @@ export const functions = {
     trigger: 'topic',
     topic: 'jobs',
     serviceAccount: 'worker',
-    envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID', 'WEB_APP_URL', 'SNAPSHOT_BUCKET'],
+    envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID'],
+  },
+  workerDiscordCanvas: {
+    trigger: 'topic',
+    topic: 'jobs',
+    serviceAccount: 'worker',
+    envByEnvironmentFromConfig: ['WEB_APP_URL', 'SNAPSHOT_BUCKET'],
     envFromProcess: ['SNAPSHOT_URL_TTL_SECONDS'],
+  },
+  workerDiscordFollowup: {
+    trigger: 'topic',
+    topic: 'jobs',
+    serviceAccount: 'worker',
   },
   workerOAuth: {
     trigger: 'topic',
@@ -88,5 +99,17 @@ export const functions = {
     topic: 'jobs',
     serviceAccount: 'worker',
     envFromProcess: ['CANVAS_CHUNK_SIZE', 'REQUEST_RESPONSE_TTL_SECONDS'],
+  },
+  workerWebActiveArea: {
+    trigger: 'topic',
+    topic: 'jobs',
+    serviceAccount: 'worker',
+    envFromProcess: ['REQUEST_RESPONSE_TTL_SECONDS'],
+  },
+  workerWebRealtimeToken: {
+    trigger: 'topic',
+    topic: 'jobs',
+    serviceAccount: 'worker',
+    envFromProcess: ['REQUEST_RESPONSE_TTL_SECONDS'],
   },
 };

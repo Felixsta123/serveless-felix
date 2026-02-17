@@ -8,7 +8,17 @@ const projectId = resolveProjectId(
   environment,
   'Usage: node scripts/deploy-reliability.mjs <dev|prd>',
 );
-const workers = ['workerdraw', 'workerdiscord', 'workeroauth', 'workersnapshot', 'workerwebread'];
+const workers = [
+  'workerdraw',
+  'workerdiscord',
+  'workerdiscordcanvas',
+  'workerdiscordfollowup',
+  'workeroauth',
+  'workersnapshot',
+  'workerwebactivearea',
+  'workerwebread',
+  'workerwebrealtimetoken',
+];
 const dlqTopic = 'jobs-dlq';
 const dlqSubscription = 'jobs-dlq-sub';
 
@@ -83,6 +93,7 @@ ensureTopic(dlqTopic);
 ensureSubscription(dlqSubscription, dlqTopic);
 
 const pubsubServiceAgent = `service-${projectNumber}@gcp-sa-pubsub.iam.gserviceaccount.com`;
+const eventarcServiceAgent = `service-${projectNumber}@gcp-sa-eventarc.iam.gserviceaccount.com`;
 console.log(`Granting DLQ publish permission to Pub/Sub service agent: ${pubsubServiceAgent}`);
 runInherit([
   'pubsub',
@@ -96,6 +107,45 @@ runInherit([
   '--role',
   'roles/pubsub.publisher',
 ]);
+
+const ensureRunInvokerBindings = (service) => {
+  const describe = runResult([
+    'run',
+    'services',
+    'describe',
+    service,
+    '--region',
+    region,
+    '--project',
+    projectId,
+  ]);
+  if (describe.status !== 0) {
+    console.warn(`Skipping run.invoker hardening; Cloud Run service not found: ${service}`);
+    return;
+  }
+
+  const members = [
+    `serviceAccount:${eventarcServiceAgent}`,
+    `serviceAccount:${pubsubServiceAgent}`,
+    `serviceAccount:worker-sa@${projectId}.iam.gserviceaccount.com`,
+  ];
+  for (const member of members) {
+    runInherit([
+      'run',
+      'services',
+      'add-iam-policy-binding',
+      service,
+      '--region',
+      region,
+      '--project',
+      projectId,
+      '--member',
+      member,
+      '--role',
+      'roles/run.invoker',
+    ]);
+  }
+};
 
 const subscriptions = JSON.parse(
   runCapture([
@@ -145,7 +195,12 @@ for (const subscriptionId of workerSubscriptionIds) {
   ]);
 }
 
+for (const workerService of workers) {
+  ensureRunInvokerBindings(workerService);
+}
+
 console.log('Reliability hardening applied.');
 console.log(`- DLQ topic: ${dlqTopic}`);
 console.log(`- DLQ subscription: ${dlqSubscription}`);
 console.log(`- Worker subscriptions hardened: ${workerSubscriptionIds.length}`);
+console.log(`- Worker run.invoker hardened: ${workers.length}`);

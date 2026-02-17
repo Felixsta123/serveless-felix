@@ -48,10 +48,18 @@ jobs:
               - 'src/functions/workers/workerSnapshot/**'
             worker_discord:
               - 'src/functions/workers/workerDiscord/**'
+            worker_discord_canvas:
+              - 'src/functions/workers/workerDiscordCanvas/**'
+            worker_discord_followup:
+              - 'src/functions/workers/workerDiscordFollowup/**'
             worker_oauth:
               - 'src/functions/workers/workerOAuth/**'
             worker_webread:
               - 'src/functions/workers/workerWebRead/**'
+            worker_web_active_area:
+              - 'src/functions/workers/workerWebActiveArea/**'
+            worker_web_realtime_token:
+              - 'src/functions/workers/workerWebRealtimeToken/**'
             gateway:
               - 'gateway/openapi.template.yaml'
               - 'scripts/deploy-gateway.mjs'
@@ -98,7 +106,7 @@ jobs:
           fi
 
           if [[ "$force_all" == "true" ]]; then
-            functions=(discordProxy webProxy oauthProxy workerDraw workerSnapshot workerDiscord workerOAuth workerWebRead)
+            functions=(discordProxy webProxy oauthProxy workerDraw workerSnapshot workerDiscord workerDiscordCanvas workerDiscordFollowup workerOAuth workerWebRead workerWebActiveArea workerWebRealtimeToken)
           else
             [[ "${{ steps.changes.outputs.discord_proxy }}" == "true" ]] && functions+=(discordProxy)
             [[ "${{ steps.changes.outputs.web_proxy }}" == "true" ]] && functions+=(webProxy)
@@ -106,8 +114,12 @@ jobs:
             [[ "${{ steps.changes.outputs.worker_draw }}" == "true" ]] && functions+=(workerDraw)
             [[ "${{ steps.changes.outputs.worker_snapshot }}" == "true" ]] && functions+=(workerSnapshot)
             [[ "${{ steps.changes.outputs.worker_discord }}" == "true" ]] && functions+=(workerDiscord)
+            [[ "${{ steps.changes.outputs.worker_discord_canvas }}" == "true" ]] && functions+=(workerDiscordCanvas)
+            [[ "${{ steps.changes.outputs.worker_discord_followup }}" == "true" ]] && functions+=(workerDiscordFollowup)
             [[ "${{ steps.changes.outputs.worker_oauth }}" == "true" ]] && functions+=(workerOAuth)
             [[ "${{ steps.changes.outputs.worker_webread }}" == "true" ]] && functions+=(workerWebRead)
+            [[ "${{ steps.changes.outputs.worker_web_active_area }}" == "true" ]] && functions+=(workerWebActiveArea)
+            [[ "${{ steps.changes.outputs.worker_web_realtime_token }}" == "true" ]] && functions+=(workerWebRealtimeToken)
           fi
 
           if (( ${#functions[@]} > 0 )); then
