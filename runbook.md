@@ -288,7 +288,7 @@ gcloud monitoring policies list --project="$PROJECT_ID" --format='table(displayN
 
 Expected:
 
-- 7 functions active
+- 8 functions active
 - gateway active
 - Eventarc worker subscriptions have DLQ topic + `maxDeliveryAttempts=10`
 - both TTL fields are `ACTIVE`

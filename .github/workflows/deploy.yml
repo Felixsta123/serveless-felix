@@ -50,6 +50,8 @@ jobs:
               - 'src/functions/workers/workerDiscord/**'
             worker_oauth:
               - 'src/functions/workers/workerOAuth/**'
+            worker_webread:
+              - 'src/functions/workers/workerWebRead/**'
             gateway:
               - 'gateway/openapi.template.yaml'
               - 'scripts/deploy-gateway.mjs'
@@ -96,7 +98,7 @@ jobs:
           fi
 
           if [[ "$force_all" == "true" ]]; then
-            functions=(discordProxy webProxy oauthProxy workerDraw workerSnapshot workerDiscord workerOAuth)
+            functions=(discordProxy webProxy oauthProxy workerDraw workerSnapshot workerDiscord workerOAuth workerWebRead)
           else
             [[ "${{ steps.changes.outputs.discord_proxy }}" == "true" ]] && functions+=(discordProxy)
             [[ "${{ steps.changes.outputs.web_proxy }}" == "true" ]] && functions+=(webProxy)
@@ -105,6 +107,7 @@ jobs:
             [[ "${{ steps.changes.outputs.worker_snapshot }}" == "true" ]] && functions+=(workerSnapshot)
             [[ "${{ steps.changes.outputs.worker_discord }}" == "true" ]] && functions+=(workerDiscord)
             [[ "${{ steps.changes.outputs.worker_oauth }}" == "true" ]] && functions+=(workerOAuth)
+            [[ "${{ steps.changes.outputs.worker_webread }}" == "true" ]] && functions+=(workerWebRead)
           fi
 
           if (( ${#functions[@]} > 0 )); then
