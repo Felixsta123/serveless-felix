@@ -46,8 +46,8 @@ let lastStreamErrorAt = 0;
 let streamErrorCount = 0;
 let fallbackPollTimer: number | null = null;
 
-const VIEWPORT_REFRESH_DEBOUNCE_MS = 250;
-const FALLBACK_POLL_INTERVAL_MS = 2500;
+const VIEWPORT_REFRESH_DEBOUNCE_MS = 80;
+const FALLBACK_POLL_INTERVAL_MS = 900;
 const DRAG_THRESHOLD_PX = 3;
 const KEY_PAN_STEP = 5;
 const CANVAS_BG_COLOR = '#09090b';
@@ -116,6 +116,10 @@ const applyPixelUpdate = (pixel: Pixel): void => {
   state.pixels.set(key(pixel.x, pixel.y), pixel);
   render();
   window.dispatchEvent(new CustomEvent('canvasUpdated'));
+};
+
+export const upsertPixel = (pixel: Pixel): void => {
+  applyPixelUpdate(pixel);
 };
 
 const refreshVisibleFromApi = async (): Promise<void> => {

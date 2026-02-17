@@ -9,6 +9,7 @@ import {
   setOffset,
   getPixelAt,
   getActiveArea,
+  upsertPixel,
 } from './canvas';
 
 const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
@@ -93,6 +94,13 @@ const handleDraw = async (): Promise<void> => {
   setStatus('Dessin en cours...');
 
   try {
+    upsertPixel({
+      x: selected.x,
+      y: selected.y,
+      color,
+      authorId: currentUser.id,
+      updatedAt: new Date().toISOString(),
+    });
     await drawPixel(selected.x, selected.y, color);
     setStatus('Pixel dessiné', 'success');
   } catch (err) {
