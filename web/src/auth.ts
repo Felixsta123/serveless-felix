@@ -12,6 +12,7 @@ export type User = {
 
 export type SessionReady = {
   user: User;
+  firebaseCustomToken: string | null;
 };
 
 type SessionPollResult = SessionReady | null;
@@ -74,6 +75,8 @@ export const pollSession = async (state: string): Promise<SessionPollResult> => 
       if (status === 'ready' && data.user && typeof data.user === 'object') {
         return {
           user: data.user as User,
+          firebaseCustomToken:
+            typeof data.firebaseCustomToken === 'string' ? data.firebaseCustomToken : null,
         };
       }
       if (status === 'error') {

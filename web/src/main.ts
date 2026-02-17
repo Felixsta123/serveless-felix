@@ -1,7 +1,7 @@
 import './style.css';
 import { config } from './config';
 import { getUser, setUser, clearSession, startLogin, pollSession, User } from './auth';
-import { drawPixel, logoutSession, Pixel } from './api';
+import { drawPixel, getRealtimeToken, logoutSession, Pixel } from './api';
 import {
   initCanvas,
   unsubscribeAll,
@@ -10,6 +10,8 @@ import {
   getPixelAt,
   getActiveArea,
   upsertPixel,
+  setRealtimeToken,
+  signOutRealtimeClient,
 } from './canvas';
 
 const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
@@ -27,6 +29,7 @@ const viewportEl = document.getElementById('viewport') as HTMLParagraphElement;
 const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
 
 let currentUser: User | null = null;
+let oauthRealtimeToken: string | null = null;
 
 const getInitialOffset = (min: number, max: number): number => {
   const viewPixels = Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
@@ -122,6 +125,8 @@ const handleOAuthCallback = async (): Promise<boolean> => {
   const result = await pollSession(state);
   if (result) {
     try {
+      oauthRealtimeToken = result.firebaseCustomToken;
+      setRealtimeToken(oauthRealtimeToken);
       setUser(result.user);
       updateAuthUI(result.user);
       window.history.replaceState({}, '', window.location.pathname);
@@ -129,6 +134,8 @@ const handleOAuthCallback = async (): Promise<boolean> => {
     } catch (error) {
       console.error('Failed to complete session setup', error);
       clearSession();
+      oauthRealtimeToken = null;
+      setRealtimeToken(null);
       setStatus('Échec de connexion', 'error');
       window.history.replaceState({}, '', window.location.pathname);
       return false;
@@ -141,15 +148,30 @@ const handleOAuthCallback = async (): Promise<boolean> => {
 };
 
 const init = async (): Promise<void> => {
+  oauthRealtimeToken = null;
+
   if (window.location.search.includes('oauth_state')) {
     await handleOAuthCallback();
   }
 
   const user = getUser();
   if (user) {
+    if (oauthRealtimeToken) {
+      setRealtimeToken(oauthRealtimeToken);
+    } else {
+      try {
+        const token = await getRealtimeToken();
+        setRealtimeToken(token);
+      } catch (error) {
+        console.warn('Failed to fetch realtime token', error);
+        setRealtimeToken(null);
+      }
+    }
     updateAuthUI(user);
   } else {
     clearSession();
+    oauthRealtimeToken = null;
+    setRealtimeToken(null);
     updateAuthUI(null);
   }
 
@@ -189,6 +211,12 @@ const init = async (): Promise<void> => {
     } catch (error) {
       console.error('Logout failed', error);
     }
+    try {
+      await signOutRealtimeClient();
+    } catch (error) {
+      console.error('Realtime logout failed', error);
+    }
+    setRealtimeToken(null);
     clearSession();
     updateAuthUI(null);
     unsubscribeAll();

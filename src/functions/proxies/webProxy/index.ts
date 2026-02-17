@@ -1,5 +1,6 @@
 import { HttpFunction } from '@google-cloud/functions-framework';
 import { Firestore, Timestamp } from '@google-cloud/firestore';
+import admin from 'firebase-admin';
 import { DrawJobPayload, publishJob } from '../../shared/queue.js';
 import {
   getHttpRequestContext,
@@ -22,6 +23,10 @@ const firestore = new Firestore();
 const WEB_APP_URL = process.env.WEB_APP_URL ?? '';
 const CHUNK_SIZE = Number(process.env.CANVAS_CHUNK_SIZE ?? 50);
 const SESSION_COOKIE_NAME = 'session_token';
+const adminAuth = () => {
+  const app = admin.apps.length > 0 ? admin.app() : admin.initializeApp();
+  return admin.auth(app);
+};
 
 type SessionData = {
   discordUserId: string;
@@ -174,13 +179,6 @@ const toTimestampIso = (value: unknown): string | null => {
   return null;
 };
 
-const toDayKey = (date: Date): string => {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
-};
-
 const readActiveArea = (data: Record<string, unknown>): ActiveAreaRecord => ({
   minX: parseIntStrict(data.minX) ?? 0,
   minY: parseIntStrict(data.minY) ?? 0,
@@ -254,16 +252,6 @@ const loadCanvasWindow = async (
     activeArea,
     pixels: Array.from(dedup.values()),
   };
-};
-
-const writeSseEvent = (
-  res: Parameters<HttpFunction>[1],
-  event: string,
-  payload: unknown,
-): void => {
-  const body = JSON.stringify(payload);
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${body}\n\n`);
 };
 
 export const webProxy: HttpFunction = async (req, res) =>
@@ -409,6 +397,40 @@ export const webProxy: HttpFunction = async (req, res) =>
     return;
   }
 
+  if (req.method === 'GET' && path === '/realtime-token') {
+    const session = await validateSession(req, requestContext, path);
+    if (!session) {
+      logWarn('web_proxy_realtime_token_unauthorized', {
+        ...requestContext,
+        path,
+      });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    try {
+      const token = await adminAuth().createCustomToken(session.discordUserId, {
+        discordUsername: session.discordUsername,
+      });
+
+      logInfo('web_proxy_realtime_token_created', {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+      });
+      res.status(200).json({ token });
+      return;
+    } catch (error) {
+      logError('web_proxy_realtime_token_failed', error, {
+        ...requestContext,
+        path,
+        userId: session.discordUserId,
+      });
+      res.status(500).json({ error: 'Failed to create realtime token' });
+      return;
+    }
+  }
+
   if (req.method === 'POST' && path === '/draw') {
     const session = await validateSession(req, requestContext, path);
     if (!session) {
@@ -485,154 +507,13 @@ export const webProxy: HttpFunction = async (req, res) =>
   }
 
   if (req.method === 'GET' && path === '/stream') {
-    const session = await validateSession(req, requestContext, path);
-    if (!session) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-
-    const windowQuery = parseCanvasWindowQuery(req.query as Record<string, unknown>);
-    if (!windowQuery) {
-      res.status(400).json({
-        error: 'Invalid query params. Required: offsetX (int), offsetY (int), size (1-500)',
-      });
-      return;
-    }
-
-    const streamStartedAt = Timestamp.now();
-    let initialSnapshot: CanvasWindowPayload;
-    try {
-      initialSnapshot = await loadCanvasWindow(windowQuery);
-    } catch (error) {
-      logError('web_proxy_stream_snapshot_failed', error, {
-        ...requestContext,
-        path,
-        userId: session.discordUserId,
-        offsetX: windowQuery.offsetX,
-        offsetY: windowQuery.offsetY,
-        size: windowQuery.size,
-      });
-      res.status(500).json({ error: 'Failed to initialize stream' });
-      return;
-    }
-
-    res.status(200);
-    res.set('Content-Type', 'text/event-stream');
-    res.set('Cache-Control', 'no-cache, no-transform');
-    res.set('Connection', 'keep-alive');
-    res.set('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
-    writeSseEvent(res, 'snapshot', initialSnapshot);
-
-    let currentRoundId = initialSnapshot.roundId;
-
-    const activeAreaUnsubscribe = firestore.doc('activeArea/current').onSnapshot(
-      (snap) => {
-        if (!snap.exists) {
-          return;
-        }
-        const activeArea = readActiveArea(
-          (snap.data() as Record<string, unknown> | undefined) ?? {},
-        );
-        currentRoundId = activeArea.roundId;
-        writeSseEvent(res, 'active_area', activeArea);
-      },
-      (error) => {
-        logError('web_proxy_stream_active_area_watch_failed', error, {
-          ...requestContext,
-          path,
-          userId: session.discordUserId,
-        });
-      },
-    );
-
-    const eventsQuery = firestore
-      .collection(`eventsByDay/${toDayKey(new Date())}/items`)
-      .where('ts', '>', streamStartedAt)
-      .orderBy('ts', 'asc');
-
-    const eventsUnsubscribe = eventsQuery.onSnapshot(
-      (snapshot) => {
-        for (const change of snapshot.docChanges()) {
-          if (change.type !== 'added') {
-            continue;
-          }
-
-          const data = change.doc.data() as Record<string, unknown>;
-          const x = parseIntStrict(data.x);
-          const y = parseIntStrict(data.y);
-          const color = typeof data.newColor === 'string' ? data.newColor : null;
-          const authorId = typeof data.userId === 'string' ? data.userId : null;
-          const roundId = toRoundId(data.roundId);
-
-          if (
-            x === null ||
-            y === null ||
-            !color ||
-            !authorId ||
-            roundId !== currentRoundId
-          ) {
-            continue;
-          }
-
-          writeSseEvent(res, 'pixel', {
-            x,
-            y,
-            color,
-            authorId,
-            updatedAt: toTimestampIso(data.ts),
-          } satisfies PixelRecord);
-        }
-      },
-      (error) => {
-        logError('web_proxy_stream_events_watch_failed', error, {
-          ...requestContext,
-          path,
-          userId: session.discordUserId,
-          day: toDayKey(new Date()),
-        });
-      },
-    );
-
-    const heartbeat = setInterval(() => {
-      if (!res.writableEnded) {
-        res.write(': keepalive\n\n');
-      }
-    }, 15000);
-
-    let closed = false;
-    const closeStream = () => {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      clearInterval(heartbeat);
-      activeAreaUnsubscribe();
-      eventsUnsubscribe();
-      if (!res.writableEnded) {
-        res.end();
-      }
-      logInfo('web_proxy_stream_closed', {
-        ...requestContext,
-        path,
-        userId: session.discordUserId,
-        offsetX: windowQuery.offsetX,
-        offsetY: windowQuery.offsetY,
-        size: windowQuery.size,
-      });
-    };
-
-    req.on('close', closeStream);
-    req.on('aborted', closeStream);
-
-    logInfo('web_proxy_stream_opened', {
+    logWarn('web_proxy_stream_deprecated', {
       ...requestContext,
       path,
-      userId: session.discordUserId,
-      offsetX: windowQuery.offsetX,
-      offsetY: windowQuery.offsetY,
-      size: windowQuery.size,
-      roundId: initialSnapshot.roundId,
+      method: req.method,
+    });
+    res.status(410).json({
+      error: 'Deprecated endpoint. Use Firestore realtime listeners from the web client.',
     });
     return;
   }

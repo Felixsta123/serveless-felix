@@ -1,6 +1,13 @@
 import { config } from './config';
 import { getActiveArea as fetchActiveArea, getCanvasWindow } from './api';
 import type { ActiveArea, Pixel } from './api';
+import {
+  ensureRealtimeAuth,
+  setRealtimeCustomToken,
+  signOutRealtime,
+  watchActiveArea,
+  watchChunkPixels,
+} from './realtime';
 
 type CanvasState = {
   pixels: Map<string, Pixel>;
@@ -8,19 +15,6 @@ type CanvasState = {
   offsetY: number;
   selected: { x: number; y: number } | null;
   activeRoundId: string | null;
-};
-
-type StreamSnapshotPayload = {
-  roundId: string | null;
-  window: {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-    size: number;
-  };
-  activeArea: ActiveArea;
-  pixels: Pixel[];
 };
 
 const state: CanvasState = {
@@ -33,8 +27,16 @@ const state: CanvasState = {
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
-let stream: EventSource | null = null;
-let viewportRefreshTimer: number | null = null;
+let viewportFetchTimer: number | null = null;
+let fallbackPollTimer: number | null = null;
+let realtimePrimeTimer: number | null = null;
+let activeAreaUnsubscribe: (() => void) | null = null;
+let realtimeStartPromise: Promise<boolean> | null = null;
+let realtimeEnabled = false;
+let realtimeErrors = 0;
+const chunkUnsubById = new Map<string, () => void>();
+const chunkCache = new Map<string, Map<string, Pixel>>();
+
 let isPanning = false;
 let dragMoved = false;
 let suppressClick = false;
@@ -42,12 +44,13 @@ let panStartMouseX = 0;
 let panStartMouseY = 0;
 let panStartOffsetX = 0;
 let panStartOffsetY = 0;
-let lastStreamErrorAt = 0;
-let streamErrorCount = 0;
-let fallbackPollTimer: number | null = null;
+let renderQueued = false;
 
-const VIEWPORT_REFRESH_DEBOUNCE_MS = 80;
-const FALLBACK_POLL_INTERVAL_MS = 900;
+const VIEWPORT_FETCH_DEBOUNCE_MS = 100;
+const REALTIME_PRIME_DELAY_MS = 150;
+const FALLBACK_POLL_INTERVAL_MS = 3000;
+const MAX_REALTIME_ERRORS = 5;
+const SUBSCRIPTION_MARGIN_CHUNKS = 1;
 const DRAG_THRESHOLD_PX = 3;
 const KEY_PAN_STEP = 5;
 const CANVAS_BG_COLOR = '#09090b';
@@ -55,6 +58,55 @@ const GRID_COLOR = '#27272a';
 const SELECTION_COLOR = '#fafafa';
 
 const key = (x: number, y: number) => `${x}_${y}`;
+const chunkIdFor = (x: number, y: number) =>
+  `${Math.floor(x / config.chunkSize)}_${Math.floor(y / config.chunkSize)}`;
+
+const toIso = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === 'object' &&
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  ) {
+    try {
+      return ((value as { toDate: () => Date }).toDate()).toISOString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+const toInt = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const parsePixel = (data: Record<string, unknown>): Pixel | null => {
+  const x = toInt(data.x);
+  const y = toInt(data.y);
+  const color = typeof data.color === 'string' ? data.color : null;
+  const authorId = typeof data.authorId === 'string' ? data.authorId : null;
+  if (x === null || y === null || !color || !authorId) {
+    return null;
+  }
+  return {
+    x,
+    y,
+    color,
+    authorId,
+    updatedAt: toIso(data.updatedAt),
+  };
+};
 
 const applyRoundId = (nextRoundId: string | null): boolean => {
   if (state.activeRoundId === nextRoundId) {
@@ -62,20 +114,11 @@ const applyRoundId = (nextRoundId: string | null): boolean => {
   }
   state.activeRoundId = nextRoundId;
   state.pixels.clear();
+  chunkCache.clear();
   return true;
 };
 
-const getViewSize = (): number => {
-  return Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
-};
-
-const parseStreamPayload = <T>(raw: string): T | null => {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-};
+const getViewSize = (): number => Math.max(1, Math.floor(config.canvasSize / config.pixelSize));
 
 const getWindowBounds = () => {
   const size = getViewSize();
@@ -93,50 +136,67 @@ const pixelInsideWindow = (x: number, y: number): boolean => {
   return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
 };
 
-const applySnapshot = (payload: StreamSnapshotPayload): void => {
-  const roundChanged = applyRoundId(payload.roundId);
+const chunkIdsForWindow = (marginChunks = 0): string[] => {
+  const { minX, minY, maxX, maxY } = getWindowBounds();
+  const minChunkX = Math.floor(minX / config.chunkSize) - marginChunks;
+  const minChunkY = Math.floor(minY / config.chunkSize) - marginChunks;
+  const maxChunkX = Math.floor(maxX / config.chunkSize) + marginChunks;
+  const maxChunkY = Math.floor(maxY / config.chunkSize) + marginChunks;
 
-  if (roundChanged) {
-    state.selected = null;
+  const ids: string[] = [];
+  for (let cx = minChunkX; cx <= maxChunkX; cx++) {
+    for (let cy = minChunkY; cy <= maxChunkY; cy++) {
+      ids.push(`${cx}_${cy}`);
+    }
   }
-
-  state.pixels.clear();
-  for (const pixel of payload.pixels) {
-    state.pixels.set(key(pixel.x, pixel.y), pixel);
-  }
-
-  render();
-  window.dispatchEvent(new CustomEvent('canvasUpdated'));
+  return ids;
 };
 
-const applyPixelUpdate = (pixel: Pixel): void => {
-  if (!pixelInsideWindow(pixel.x, pixel.y)) {
+const hasVisibleChunkCoverage = (): boolean => {
+  const required = chunkIdsForWindow(0);
+  for (const chunkId of required) {
+    if (!chunkCache.has(chunkId)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const scheduleRender = (): void => {
+  if (renderQueued) {
     return;
   }
-  state.pixels.set(key(pixel.x, pixel.y), pixel);
-  render();
-  window.dispatchEvent(new CustomEvent('canvasUpdated'));
+  renderQueued = true;
+  window.requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+    window.dispatchEvent(new CustomEvent('canvasUpdated'));
+  });
 };
 
-export const upsertPixel = (pixel: Pixel): void => {
-  applyPixelUpdate(pixel);
-};
+const repaintVisibleFromCache = (): void => {
+  const bounds = getWindowBounds();
+  const next = new Map<string, Pixel>();
 
-const refreshVisibleFromApi = async (): Promise<void> => {
-  try {
-    const bounds = getWindowBounds();
-    const payload = await getCanvasWindow(bounds.minX, bounds.minY, bounds.size);
-    applySnapshot({
-      ...payload,
-      activeArea: {
-        ...payload.activeArea,
-        roundId: payload.roundId,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: message } }));
+  for (const chunkId of chunkIdsForWindow()) {
+    const chunk = chunkCache.get(chunkId);
+    if (!chunk) {
+      continue;
+    }
+    for (const pixel of chunk.values()) {
+      if (
+        pixel.x >= bounds.minX &&
+        pixel.x <= bounds.maxX &&
+        pixel.y >= bounds.minY &&
+        pixel.y <= bounds.maxY
+      ) {
+        next.set(key(pixel.x, pixel.y), pixel);
+      }
+    }
   }
+
+  state.pixels = next;
+  scheduleRender();
 };
 
 const stopFallbackPolling = (): void => {
@@ -146,105 +206,256 @@ const stopFallbackPolling = (): void => {
   }
 };
 
-const ensureFallbackPolling = (): void => {
+const stopRealtimePrime = (): void => {
+  if (realtimePrimeTimer !== null) {
+    window.clearTimeout(realtimePrimeTimer);
+    realtimePrimeTimer = null;
+  }
+};
+
+const stopChunkListeners = (): void => {
+  for (const unsub of chunkUnsubById.values()) {
+    unsub();
+  }
+  chunkUnsubById.clear();
+};
+
+const disableRealtime = (): void => {
+  realtimeEnabled = false;
+  stopChunkListeners();
+  if (activeAreaUnsubscribe) {
+    activeAreaUnsubscribe();
+    activeAreaUnsubscribe = null;
+  }
+};
+
+const notifyRealtimeError = (error: unknown): void => {
+  realtimeErrors += 1;
+  if (realtimeErrors < MAX_REALTIME_ERRORS) {
+    return;
+  }
+  console.error('Realtime disabled after repeated errors', error);
+  disableRealtime();
+  startFallbackPolling();
+};
+
+const refreshVisibleFromApi = async (): Promise<void> => {
+  try {
+    const bounds = getWindowBounds();
+    const payload = await getCanvasWindow(bounds.minX, bounds.minY, bounds.size);
+
+    if (applyRoundId(payload.roundId)) {
+      stopChunkListeners();
+      if (realtimeEnabled) {
+        syncChunkSubscriptions();
+      }
+    }
+
+    const freshVisible = new Map<string, Pixel>();
+    for (const pixel of payload.pixels) {
+      const pixelKey = key(pixel.x, pixel.y);
+      freshVisible.set(pixelKey, pixel);
+
+      const chunkId = chunkIdFor(pixel.x, pixel.y);
+      let chunk = chunkCache.get(chunkId);
+      if (!chunk) {
+        chunk = new Map<string, Pixel>();
+        chunkCache.set(chunkId, chunk);
+      }
+      chunk.set(pixelKey, pixel);
+    }
+
+    state.pixels = freshVisible;
+    scheduleRender();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    window.dispatchEvent(new CustomEvent('canvasError', { detail: { error: message } }));
+  }
+};
+
+const scheduleViewportFetch = (delayMs = VIEWPORT_FETCH_DEBOUNCE_MS): void => {
+  if (viewportFetchTimer !== null) {
+    window.clearTimeout(viewportFetchTimer);
+  }
+  viewportFetchTimer = window.setTimeout(() => {
+    viewportFetchTimer = null;
+    void refreshVisibleFromApi();
+  }, delayMs);
+};
+
+const startFallbackPolling = (): void => {
   if (fallbackPollTimer !== null) {
     return;
   }
-  void refreshVisibleFromApi();
+  stopRealtimePrime();
+  scheduleViewportFetch(0);
   fallbackPollTimer = window.setInterval(() => {
     void refreshVisibleFromApi();
   }, FALLBACK_POLL_INTERVAL_MS);
 };
 
-const scheduleViewportRefresh = (): void => {
-  if (viewportRefreshTimer !== null) {
-    window.clearTimeout(viewportRefreshTimer);
+const scheduleRealtimePrime = (): void => {
+  if (!realtimeEnabled) {
+    return;
   }
-  viewportRefreshTimer = window.setTimeout(() => {
-    viewportRefreshTimer = null;
-    void refreshVisibleFromApi();
-  }, VIEWPORT_REFRESH_DEBOUNCE_MS);
+  stopRealtimePrime();
+  realtimePrimeTimer = window.setTimeout(() => {
+    realtimePrimeTimer = null;
+    if (!hasVisibleChunkCoverage()) {
+      void refreshVisibleFromApi();
+    }
+  }, REALTIME_PRIME_DELAY_MS);
 };
 
-const closeStream = (): void => {
-  if (stream) {
-    stream.close();
-    stream = null;
+const applyChunkSnapshot = (
+  chunkId: string,
+  changes: Array<{
+    type: 'added' | 'modified' | 'removed';
+    data: Record<string, unknown>;
+  }>,
+): void => {
+  let chunk = chunkCache.get(chunkId);
+  if (!chunk) {
+    chunk = new Map<string, Pixel>();
+  }
+
+  for (const change of changes) {
+    const pixel = parsePixel(change.data);
+    if (!pixel) {
+      continue;
+    }
+    const pixelKey = key(pixel.x, pixel.y);
+
+    if (change.type === 'removed') {
+      chunk.delete(pixelKey);
+      if (pixelInsideWindow(pixel.x, pixel.y)) {
+        state.pixels.delete(pixelKey);
+      }
+      continue;
+    }
+
+    chunk.set(pixelKey, pixel);
+    if (pixelInsideWindow(pixel.x, pixel.y)) {
+      state.pixels.set(pixelKey, pixel);
+    }
+  }
+
+  if (chunk.size === 0) {
+    chunkCache.delete(chunkId);
+  } else {
+    chunkCache.set(chunkId, chunk);
+  }
+
+  realtimeErrors = 0;
+  stopRealtimePrime();
+  scheduleRender();
+};
+
+const syncChunkSubscriptions = (): void => {
+  if (!realtimeEnabled) {
+    return;
+  }
+
+  const needed = new Set(chunkIdsForWindow(SUBSCRIPTION_MARGIN_CHUNKS));
+
+  for (const [chunkId, unsub] of chunkUnsubById.entries()) {
+    if (!needed.has(chunkId)) {
+      unsub();
+      chunkUnsubById.delete(chunkId);
+    }
+  }
+
+  for (const chunkId of needed) {
+    if (chunkUnsubById.has(chunkId)) {
+      continue;
+    }
+
+    const unsub = watchChunkPixels(
+      chunkId,
+      state.activeRoundId,
+      (snapshot) => {
+        realtimeErrors = 0;
+        const changes = snapshot.docChanges().map((change) => ({
+          type: change.type,
+          data: change.doc.data() as Record<string, unknown>,
+        }));
+        applyChunkSnapshot(chunkId, changes);
+      },
+      (error) => {
+        notifyRealtimeError(error);
+      },
+    );
+
+    chunkUnsubById.set(chunkId, unsub);
   }
 };
 
-const openStream = (): void => {
-  closeStream();
+const startRealtime = async (): Promise<boolean> => {
+  if (realtimeEnabled) {
+    return true;
+  }
 
-  const bounds = getWindowBounds();
-  const params = new URLSearchParams({
-    offsetX: String(bounds.minX),
-    offsetY: String(bounds.minY),
-    size: String(bounds.size),
-  });
+  if (realtimeStartPromise) {
+    return realtimeStartPromise;
+  }
 
-  stream = new EventSource(`${config.apiGateway}/web/stream?${params.toString()}`, {
-    withCredentials: true,
-  });
+  realtimeStartPromise = (async () => {
+    try {
+      const authed = await ensureRealtimeAuth();
+      if (!authed) {
+        startFallbackPolling();
+        return false;
+      }
 
-  stream.addEventListener('snapshot', (event) => {
-    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
-      return;
-    }
-    const payload = parseStreamPayload<StreamSnapshotPayload>(event.data);
-    if (!payload) {
-      return;
-    }
-    streamErrorCount = 0;
-    stopFallbackPolling();
-    applySnapshot(payload);
-  });
+      realtimeEnabled = true;
+      realtimeErrors = 0;
+      stopFallbackPolling();
 
-  stream.addEventListener('pixel', (event) => {
-    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
-      return;
-    }
-    const payload = parseStreamPayload<Pixel>(event.data);
-    if (!payload) {
-      return;
-    }
-    applyPixelUpdate(payload);
-  });
+      if (!activeAreaUnsubscribe) {
+        activeAreaUnsubscribe = watchActiveArea(
+          (data) => {
+            realtimeErrors = 0;
+            const nextRoundId =
+              data && typeof data.roundId === 'string' && data.roundId.trim() !== ''
+                ? data.roundId
+                : null;
+            if (applyRoundId(nextRoundId)) {
+              stopChunkListeners();
+              repaintVisibleFromCache();
+              syncChunkSubscriptions();
+              scheduleRealtimePrime();
+            }
+          },
+          (error) => {
+            notifyRealtimeError(error);
+          },
+        );
+      }
 
-  stream.addEventListener('active_area', (event) => {
-    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
-      return;
+      repaintVisibleFromCache();
+      syncChunkSubscriptions();
+      scheduleRealtimePrime();
+      return true;
+    } catch (error) {
+      notifyRealtimeError(error);
+      return false;
+    } finally {
+      realtimeStartPromise = null;
     }
-    const payload = parseStreamPayload<ActiveArea>(event.data);
-    if (!payload) {
-      return;
-    }
-    const roundChanged = applyRoundId(payload.roundId);
-    if (roundChanged) {
-      state.selected = null;
-      state.pixels.clear();
-      render();
-      window.dispatchEvent(new CustomEvent('canvasUpdated'));
-      scheduleViewportRefresh();
-    }
-  });
+  })();
 
-  stream.onerror = () => {
-    streamErrorCount += 1;
-    const now = Date.now();
-    if (now - lastStreamErrorAt > 5000) {
-      lastStreamErrorAt = now;
-      window.dispatchEvent(
-        new CustomEvent('canvasError', {
-          detail: { error: 'Flux temps réel interrompu, reconnexion automatique...' },
-        }),
-      );
-    }
-    if (streamErrorCount >= 3) {
-      closeStream();
-      ensureFallbackPolling();
-    }
-  };
+  return realtimeStartPromise;
+};
+
+export const setRealtimeToken = (token: string | null): void => {
+  setRealtimeCustomToken(token);
+};
+
+export const signOutRealtimeClient = async (): Promise<void> => {
+  disableRealtime();
+  stopFallbackPolling();
+  stopRealtimePrime();
+  await signOutRealtime();
 };
 
 export const initCanvas = (el: HTMLCanvasElement): void => {
@@ -268,12 +479,25 @@ export const getState = () => state;
 export const setOffset = (x: number, y: number, resubscribe = true): void => {
   state.offsetX = Math.round(x);
   state.offsetY = Math.round(y);
+
   if (resubscribe) {
-    if (!stream) {
-      openStream();
+    if (realtimeEnabled) {
+      repaintVisibleFromCache();
+      syncChunkSubscriptions();
+      scheduleRealtimePrime();
+    } else {
+      void startRealtime().then((started) => {
+        if (started) {
+          repaintVisibleFromCache();
+          syncChunkSubscriptions();
+          scheduleRealtimePrime();
+        } else {
+          scheduleViewportFetch(0);
+        }
+      });
     }
-    scheduleViewportRefresh();
   }
+
   render();
   window.dispatchEvent(
     new CustomEvent('viewportChanged', {
@@ -286,6 +510,23 @@ export const getPixelAt = (x: number, y: number): Pixel | null => {
   return state.pixels.get(key(x, y)) || null;
 };
 
+export const upsertPixel = (pixel: Pixel): void => {
+  const pixelKey = key(pixel.x, pixel.y);
+  const chunkId = chunkIdFor(pixel.x, pixel.y);
+
+  let chunk = chunkCache.get(chunkId);
+  if (!chunk) {
+    chunk = new Map<string, Pixel>();
+    chunkCache.set(chunkId, chunk);
+  }
+  chunk.set(pixelKey, pixel);
+
+  if (pixelInsideWindow(pixel.x, pixel.y)) {
+    state.pixels.set(pixelKey, pixel);
+    scheduleRender();
+  }
+};
+
 export const getActiveArea = async (): Promise<{
   minX: number;
   minY: number;
@@ -294,7 +535,19 @@ export const getActiveArea = async (): Promise<{
   roundId: string | null;
 }> => {
   const area = await fetchActiveArea();
-  applyRoundId(area.roundId);
+  if (applyRoundId(area.roundId)) {
+    stopChunkListeners();
+  }
+
+  const started = await startRealtime();
+  if (started) {
+    repaintVisibleFromCache();
+    syncChunkSubscriptions();
+    scheduleRealtimePrime();
+  } else {
+    scheduleViewportFetch(0);
+  }
+
   return area;
 };
 
@@ -320,7 +573,7 @@ const handleClick = (e: MouseEvent): void => {
   window.dispatchEvent(
     new CustomEvent('pixelSelected', {
       detail: { x: pixelX, y: pixelY, pixel: pixel || null },
-    })
+    }),
   );
   render();
 };
@@ -449,12 +702,15 @@ const render = (): void => {
 };
 
 export const unsubscribeAll = (): void => {
-  closeStream();
+  disableRealtime();
   stopFallbackPolling();
-  if (viewportRefreshTimer !== null) {
-    window.clearTimeout(viewportRefreshTimer);
-    viewportRefreshTimer = null;
+  stopRealtimePrime();
+
+  if (viewportFetchTimer !== null) {
+    window.clearTimeout(viewportFetchTimer);
+    viewportFetchTimer = null;
   }
+
   if (canvas) {
     canvas.removeEventListener('click', handleClick);
     canvas.removeEventListener('mousedown', handleMouseDown);

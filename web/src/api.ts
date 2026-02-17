@@ -95,3 +95,17 @@ export const getCanvasWindow = async (
 
   return (await res.json()) as CanvasWindowResponse;
 };
+
+export const getRealtimeToken = async (): Promise<string | null> => {
+  const res = await authFetch(`${config.apiGateway}/web/realtime-token`, {
+    method: 'GET',
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+
+  const body = (await res.json()) as { token?: unknown };
+  return typeof body.token === 'string' ? body.token : null;
+};
