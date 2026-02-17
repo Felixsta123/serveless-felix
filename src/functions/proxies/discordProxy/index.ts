@@ -6,7 +6,6 @@ import {
   parseDiscordInteraction,
   verifyDiscordRequest,
 } from '../../shared/discord.js';
-import { postDiscordFollowup } from '../../shared/discordApi.js';
 import { resolveDiscordCommand } from '../../shared/discordCommands.js';
 import { JobPayload, publishJob } from '../../shared/queue.js';
 import {
@@ -236,13 +235,6 @@ export const discordProxy: HttpFunction = async (req, res) =>
       return;
   }
 
-  res.status(200).json({
-    type: InteractionResponseType.DeferredChannelMessageWithSource,
-    data: {
-      flags: 64,
-    },
-  });
-
   try {
     await publishJob(payload, { source: 'discord', kind: payload.kind });
   } catch (error) {
@@ -253,34 +245,18 @@ export const discordProxy: HttpFunction = async (req, res) =>
       interactionId: interaction.id,
       userId,
     });
-
-    const applicationId = interaction.application_id;
-    const interactionToken = interaction.token;
-    if (!applicationId || !interactionToken) {
-      logWarn('discord_proxy_publish_error_followup_missing_interaction_meta', {
-        ...requestContext,
-        commandName: command.name,
-        interactionId: interaction.id,
-        userId,
-      });
-      return;
-    }
-
-    try {
-      await postDiscordFollowup(
-        applicationId,
-        interactionToken,
-        'Impossible de prendre en compte la commande pour le moment. Réessayez plus tard.',
-        64,
-      );
-    } catch (followupError) {
-      logError('discord_proxy_publish_error_followup_failed', followupError, {
-        ...requestContext,
-        commandName: command.name,
-        interactionId: interaction.id,
-        userId,
-      });
-    }
+    respondEphemeral(
+      res,
+      'Impossible de prendre en compte la commande pour le moment. Réessayez plus tard.',
+    );
+    return;
   }
+
+  res.status(200).json({
+    type: InteractionResponseType.DeferredChannelMessageWithSource,
+    data: {
+      flags: 64,
+    },
+  });
     },
   );
