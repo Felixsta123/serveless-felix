@@ -9,7 +9,7 @@ export const getEnvironmentValues = () => devConfig;
 export const functions = {
   discordProxy: {
     trigger: 'http',
-    serviceAccount: 'proxy',
+    serviceAccount: 'sa-discord-proxy',
     envFromProcess: ['DISCORD_ALLOWED_GUILD_ID'],
     secrets: {
       DISCORD_PUBLIC_KEY: 'discord_public_key',
@@ -17,14 +17,14 @@ export const functions = {
   },
   webProxy: {
     trigger: 'http',
-    serviceAccount: 'proxy',
+    serviceAccount: 'sa-web-proxy',
     timeoutSeconds: 540,
     envByEnvironmentFromConfig: ['WEB_APP_URL'],
     envFromProcess: ['REQUEST_RESPONSE_TTL_SECONDS'],
   },
   oauthProxy: {
     trigger: 'http',
-    serviceAccount: 'proxy',
+    serviceAccount: 'sa-oauth-proxy',
     envByEnvironmentFromConfig: ['WEB_APP_URL'],
     secrets: {
       DISCORD_CLIENT_ID: 'discord_client_id',
@@ -33,15 +33,15 @@ export const functions = {
   },
   workerDraw: {
     trigger: 'topic',
-    topic: 'jobs',
+    topic: 'jobs-draw',
     retry: true,
-    serviceAccount: 'worker',
+    serviceAccount: 'sa-worker-draw',
     envFromProcess: ['RATE_LIMIT_PER_MINUTE', 'CANVAS_CHUNK_SIZE'],
   },
   workerSnapshot: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-snapshot',
+    serviceAccount: 'sa-worker-snapshot',
     envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID', 'SNAPSHOT_BUCKET'],
     envFromProcess: [
       'CANVAS_CHUNK_SIZE',
@@ -53,26 +53,26 @@ export const functions = {
   },
   workerDiscord: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-session',
+    serviceAccount: 'sa-worker-session',
     envByEnvironmentFromConfig: ['DISCORD_ADMIN_ROLE_ID'],
   },
   workerDiscordCanvas: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-canvas',
+    serviceAccount: 'sa-worker-canvas',
     envByEnvironmentFromConfig: ['WEB_APP_URL', 'SNAPSHOT_BUCKET'],
     envFromProcess: ['SNAPSHOT_URL_TTL_SECONDS'],
   },
   workerDiscordFollowup: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-discord-followup',
+    serviceAccount: 'sa-worker-followup',
   },
   workerOAuth: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-oauth',
+    serviceAccount: 'sa-worker-oauth',
     envFromProcess: ['SESSION_TTL_HOURS'],
     secrets: {
       DISCORD_CLIENT_ID: 'discord_client_id',
@@ -81,20 +81,20 @@ export const functions = {
   },
   workerWebRead: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-web-read',
+    serviceAccount: 'sa-worker-web-read',
     envFromProcess: ['CANVAS_CHUNK_SIZE', 'REQUEST_RESPONSE_TTL_SECONDS'],
   },
   workerWebActiveArea: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-web-active-area',
+    serviceAccount: 'sa-worker-web-active-area',
     envFromProcess: ['REQUEST_RESPONSE_TTL_SECONDS'],
   },
   workerWebRealtimeToken: {
     trigger: 'topic',
-    topic: 'jobs',
-    serviceAccount: 'worker',
+    topic: 'jobs-web-realtime-token',
+    serviceAccount: 'sa-worker-web-realtime-token',
     envFromProcess: ['REQUEST_RESPONSE_TTL_SECONDS'],
   },
 };

@@ -88,8 +88,21 @@ gcloud storage buckets create "gs://$SNAPSHOT_BUCKET" \
 ### Pub/Sub
 
 ```bash
-gcloud pubsub topics create jobs --project "$PROJECT_ID" || true
-gcloud pubsub topics create jobs-dlq --project "$PROJECT_ID" || true
+for TOPIC in \
+  jobs-draw \
+  jobs-canvas \
+  jobs-session \
+  jobs-snapshot \
+  jobs-oauth \
+  jobs-discord-followup \
+  jobs-web-read \
+  jobs-web-active-area \
+  jobs-web-realtime-token \
+  jobs-dlq
+do
+  gcloud pubsub topics create "$TOPIC" --project "$PROJECT_ID" || true
+done
+
 gcloud pubsub subscriptions create jobs-dlq-sub \
   --project "$PROJECT_ID" \
   --topic jobs-dlq \
@@ -103,53 +116,97 @@ gcloud iam service-accounts create api-gateway-invoker \
   --project "$PROJECT_ID" \
   --display-name="API Gateway Invoker" || true
 
-gcloud iam service-accounts create proxy-sa \
-  --project "$PROJECT_ID" \
-  --display-name="Proxy Functions SA" || true
-
-gcloud iam service-accounts create worker-sa \
-  --project "$PROJECT_ID" \
-  --display-name="Worker Functions SA" || true
+for SA in \
+  sa-discord-proxy \
+  sa-web-proxy \
+  sa-oauth-proxy \
+  sa-worker-draw \
+  sa-worker-session \
+  sa-worker-snapshot \
+  sa-worker-canvas \
+  sa-worker-followup \
+  sa-worker-oauth \
+  sa-worker-web-read \
+  sa-worker-web-active-area \
+  sa-worker-web-realtime-token
+do
+  gcloud iam service-accounts create "$SA" \
+    --project "$PROJECT_ID" \
+    --display-name "$SA" || true
+done
 ```
 
 ## 5. IAM
 
 ```bash
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:proxy-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/pubsub.publisher"
+add_project_role() {
+  local sa="$1"
+  local role="$2"
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${sa}@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="$role"
+}
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:proxy-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
+add_project_role sa-discord-proxy roles/pubsub.publisher
+add_project_role sa-discord-proxy roles/secretmanager.secretAccessor
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:proxy-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/datastore.user"
+add_project_role sa-web-proxy roles/pubsub.publisher
+add_project_role sa-web-proxy roles/datastore.user
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/pubsub.subscriber"
+add_project_role sa-oauth-proxy roles/pubsub.publisher
+add_project_role sa-oauth-proxy roles/secretmanager.secretAccessor
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/datastore.user"
+add_project_role sa-worker-draw roles/pubsub.subscriber
+add_project_role sa-worker-draw roles/datastore.user
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
+add_project_role sa-worker-session roles/pubsub.subscriber
+add_project_role sa-worker-session roles/datastore.user
 
-gcloud storage buckets add-iam-policy-binding "gs://$SNAPSHOT_BUCKET" \
-  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/storage.objectAdmin"
+add_project_role sa-worker-snapshot roles/pubsub.subscriber
+add_project_role sa-worker-snapshot roles/datastore.user
+
+add_project_role sa-worker-canvas roles/pubsub.subscriber
+add_project_role sa-worker-canvas roles/datastore.user
+
+add_project_role sa-worker-followup roles/pubsub.subscriber
+
+add_project_role sa-worker-oauth roles/pubsub.subscriber
+add_project_role sa-worker-oauth roles/datastore.user
+add_project_role sa-worker-oauth roles/secretmanager.secretAccessor
+
+add_project_role sa-worker-web-read roles/pubsub.subscriber
+add_project_role sa-worker-web-read roles/datastore.user
+
+add_project_role sa-worker-web-active-area roles/pubsub.subscriber
+add_project_role sa-worker-web-active-area roles/datastore.user
+
+add_project_role sa-worker-web-realtime-token roles/pubsub.subscriber
+add_project_role sa-worker-web-realtime-token roles/datastore.user
 ```
 
-Needed for Firebase custom token signing in `workerOAuth`:
+Bucket-level roles:
+
+```bash
+gcloud storage buckets add-iam-policy-binding "gs://$SNAPSHOT_BUCKET" \
+  --member="serviceAccount:sa-worker-snapshot@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
+
+gcloud storage buckets add-iam-policy-binding "gs://$SNAPSHOT_BUCKET" \
+  --member="serviceAccount:sa-worker-canvas@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.objectViewer"
+```
+
+Needed for Firebase custom token signing in `workerOAuth` and `workerWebRealtimeToken`:
 
 ```bash
 gcloud iam service-accounts add-iam-policy-binding \
-  "worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  "sa-worker-oauth@$PROJECT_ID.iam.gserviceaccount.com" \
+  --member="serviceAccount:sa-worker-oauth@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
+gcloud iam service-accounts add-iam-policy-binding \
+  "sa-worker-web-realtime-token@$PROJECT_ID.iam.gserviceaccount.com" \
+  --member="serviceAccount:sa-worker-web-realtime-token@$PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/iam.serviceAccountTokenCreator"
 ```
 
@@ -264,4 +321,27 @@ gcloud api-gateway gateways list --location="$REGION" --project="$PROJECT_ID"
 gcloud pubsub subscriptions list --project="$PROJECT_ID"
 gcloud monitoring dashboards list --project "$PROJECT_ID"
 gcloud monitoring policies list --project "$PROJECT_ID"
+```
+
+## 12. Legacy Cleanup (After Verification Window)
+
+Only do this once all end-to-end checks pass on new topics and per-function SAs.
+
+```bash
+# Remove legacy shared SA project-level roles
+for ROLE in roles/pubsub.publisher roles/secretmanager.secretAccessor roles/datastore.user; do
+  gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:proxy-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="$ROLE" || true
+done
+
+for ROLE in roles/pubsub.subscriber roles/secretmanager.secretAccessor roles/datastore.user; do
+  gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="$ROLE" || true
+done
+
+gcloud storage buckets remove-iam-policy-binding "gs://$SNAPSHOT_BUCKET" \
+  --member="serviceAccount:worker-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin" || true
 ```

@@ -14,8 +14,18 @@ const environmentValues = getEnvironmentValues();
 const names = functionName ? [functionName] : Object.keys(functions);
 
 const serviceAccounts = {
-  proxy: `proxy-sa@${projectId}.iam.gserviceaccount.com`,
-  worker: `worker-sa@${projectId}.iam.gserviceaccount.com`,
+  'sa-discord-proxy': `sa-discord-proxy@${projectId}.iam.gserviceaccount.com`,
+  'sa-web-proxy': `sa-web-proxy@${projectId}.iam.gserviceaccount.com`,
+  'sa-oauth-proxy': `sa-oauth-proxy@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-draw': `sa-worker-draw@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-session': `sa-worker-session@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-snapshot': `sa-worker-snapshot@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-canvas': `sa-worker-canvas@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-followup': `sa-worker-followup@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-oauth': `sa-worker-oauth@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-web-read': `sa-worker-web-read@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-web-active-area': `sa-worker-web-active-area@${projectId}.iam.gserviceaccount.com`,
+  'sa-worker-web-realtime-token': `sa-worker-web-realtime-token@${projectId}.iam.gserviceaccount.com`,
 };
 
 const resolveServiceAccount = (value) => {

@@ -106,14 +106,39 @@ export type JobPayload =
   | WebRealtimeTokenRequestedJobPayload;
 
 const pubsub = new PubSub();
+const JOB_TOPIC_BY_KIND: Record<JobPayload['kind'], string> = {
+  'draw.requested': 'jobs-draw',
+  'canvas.requested': 'jobs-canvas',
+  'session.command': 'jobs-session',
+  'snapshot.requested': 'jobs-snapshot',
+  'discord.followup': 'jobs-discord-followup',
+  'oauth.exchange': 'jobs-oauth',
+  'web.activeArea.requested': 'jobs-web-active-area',
+  'web.canvas.requested': 'jobs-web-read',
+  'web.realtimeToken.requested': 'jobs-web-realtime-token',
+};
+
+const resolveTopicName = (payload: JobPayload, topicName?: string): string => {
+  if (typeof topicName === 'string' && topicName.trim()) {
+    return topicName.trim();
+  }
+
+  const resolved = JOB_TOPIC_BY_KIND[payload.kind];
+  if (!resolved) {
+    throw new Error(`No topic routing defined for job kind: ${payload.kind}`);
+  }
+
+  return resolved;
+};
 
 export const publishJob = async (
   payload: JobPayload,
   attributes: Record<string, string> = {},
-  topicName = process.env.JOBS_TOPIC ?? 'jobs',
+  topicName?: string,
 ): Promise<string> => {
+  const resolvedTopicName = resolveTopicName(payload, topicName);
   const data = Buffer.from(JSON.stringify(payload));
-  return pubsub.topic(topicName).publishMessage({
+  return pubsub.topic(resolvedTopicName).publishMessage({
     data,
     attributes,
   });

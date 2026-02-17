@@ -14,6 +14,17 @@ const workers = [
   'workerwebread',
   'workerwebrealtimetoken',
 ];
+const workerTopics = [
+  'jobs-draw',
+  'jobs-canvas',
+  'jobs-session',
+  'jobs-snapshot',
+  'jobs-oauth',
+  'jobs-discord-followup',
+  'jobs-web-read',
+  'jobs-web-active-area',
+  'jobs-web-realtime-token',
+];
 const dlqTopic = 'jobs-dlq';
 const dlqSubscription = 'jobs-dlq-sub';
 
@@ -84,6 +95,9 @@ if (!projectNumber) {
   process.exit(1);
 }
 
+for (const topic of workerTopics) {
+  ensureTopic(topic);
+}
 ensureTopic(dlqTopic);
 ensureSubscription(dlqSubscription, dlqTopic);
 
@@ -122,7 +136,6 @@ const ensureRunInvokerBindings = (service) => {
   const members = [
     `serviceAccount:${eventarcServiceAgent}`,
     `serviceAccount:${pubsubServiceAgent}`,
-    `serviceAccount:worker-sa@${projectId}.iam.gserviceaccount.com`,
   ];
   for (const member of members) {
     runInherit([
@@ -157,14 +170,10 @@ const subscriptions = JSON.parse(
 const workerSubscriptionIds = subscriptions
   .map((sub) => ({
     name: typeof sub.name === 'string' ? sub.name : '',
-    topic: typeof sub.topic === 'string' ? sub.topic : '',
   }))
-  .filter(({ name, topic }) => {
+  .filter(({ name }) => {
     const subscriptionId = name.split('/').pop() ?? '';
-    const isWorkerSub = workers.some((worker) =>
-      subscriptionId.startsWith(`eventarc-${region}-${worker}-`),
-    );
-    return topic.endsWith('/topics/jobs') && isWorkerSub;
+    return workers.some((worker) => subscriptionId.startsWith(`eventarc-${region}-${worker}-`));
   })
   .map(({ name }) => name.split('/').pop())
   .filter(Boolean);
