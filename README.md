@@ -76,14 +76,28 @@ This project implements:
 
 ## 5. Why direct Firestore listeners for realtime
 
-Web writes are still enforced through API Gateway and the async backend pipeline.
+This project uses a strict split between **mutations** and **realtime reads**:
 
-Realtime reads are direct Firestore listeners because:
+- All external commands and state changes go through `API Gateway -> HTTP proxy -> Pub/Sub -> worker`.
+- This includes Discord commands, web draw actions, OAuth flow, session controls, and snapshot requests.
+- Business logic and writes remain server-side only (workers + Firestore/Storage).
 
-- lower latency than API polling
-- lower backend load and cost for high-frequency updates
-- native incremental updates (doc change stream), not full window refetch each time
-- still secured: Firestore rules require authenticated users and deny client writes
+Realtime canvas reads use direct Firestore listeners as an optimization:
+
+- lower latency than API polling for high-frequency pixel updates
+- lower backend load and lower cost under concurrent viewers
+- native incremental change streams instead of full window refetches
+
+Security and compliance guardrails for this choice:
+
+- Firestore client rules are read-only for authenticated users on canvas docs; client writes are denied
+- users must first authenticate through Discord OAuth and receive backend-issued session/realtime tokens
+- API-backed async read paths still exist (`/web/canvas`, `/web/active-area`) as fallback and for controlled access patterns
+
+Compliance note for defense:
+
+- We keep the required event-driven serverless pipeline for all workload mutations.
+- Direct Firestore listeners are used only for low-latency, read-only projection of already-processed state.
 
 ## 6. Security Model
 

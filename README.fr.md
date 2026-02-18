@@ -76,14 +76,28 @@ Ce projet implémente :
 
 ## 5. Pourquoi des listeners Firestore directs pour le temps réel
 
-Les écritures web restent appliquées via API Gateway et le pipeline backend asynchrone.
+Ce projet applique une séparation stricte entre **mutations** et **lectures temps réel** :
 
-Les lectures temps réel passent en listeners Firestore directs parce que :
+- toutes les commandes externes et tous les changements d'état passent par `API Gateway -> proxy HTTP -> Pub/Sub -> worker`
+- cela inclut les commandes Discord, les draws web, le flux OAuth, les actions de session et les snapshots
+- la logique métier et les écritures restent côté serveur uniquement (workers + Firestore/Storage)
 
-- latence plus faible qu'un polling API
-- charge backend et coût inférieurs pour les mises à jour fréquentes
-- mises à jour incrémentales natives (flux de changements de documents), pas de refetch complet de fenêtre à chaque fois
-- sécurité préservée : les règles Firestore exigent des utilisateurs authentifiés et interdisent les écritures client
+Les lectures temps réel du canvas utilisent des listeners Firestore directs comme optimisation :
+
+- latence plus faible qu'un polling API pour des mises à jour pixels fréquentes
+- charge backend et coût réduits avec des viewers concurrents
+- flux incrémental natif (changements de documents) au lieu d'un refetch complet de fenêtre
+
+Garde-fous sécurité et conformité pour ce choix :
+
+- les règles Firestore client sont en lecture seule pour les utilisateurs authentifiés sur le canvas, écriture client interdite
+- les utilisateurs doivent d'abord passer par l'auth Discord OAuth puis recevoir des tokens de session/temps réel émis par le backend
+- des chemins de lecture async via API existent toujours (`/web/canvas`, `/web/active-area`) en fallback et pour des patterns d'accès contrôlés
+
+Note conformité pour la soutenance :
+
+- le pipeline serverless event-driven requis est conservé pour toutes les mutations de workload
+- les listeners Firestore directs ne servent qu'à projeter en lecture seule, à faible latence, un état déjà traité
 
 ## 6. Modèle de sécurité
 
