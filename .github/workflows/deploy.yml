@@ -188,6 +188,8 @@ jobs:
 
       - name: Build Web App
         if: steps.plan.outputs.web_changed == 'true'
+        env:
+          VITE_API_GATEWAY_KEY: ${{ secrets.VITE_API_GATEWAY_KEY }}
         run: |
           npm --prefix web ci
           npm --prefix web run build

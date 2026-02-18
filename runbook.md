@@ -25,6 +25,7 @@ export DISCORD_CLIENT_ID="<your_discord_client_id>"
 export DISCORD_CLIENT_SECRET="<your_discord_client_secret>"
 export DISCORD_ALLOWED_GUILD_ID="<optional_guild_id>"
 export ALERT_DISCORD_WEBHOOK_URL="<discord_webhook_url>"
+export GATEWAY_API_KEY="<api_key_for_web_gateway_routes>"
 
 # Optional tuning
 export RATE_LIMIT_PER_MINUTE=20
@@ -292,6 +293,23 @@ export OAUTH_REDIRECT_URI="https://${DEV_GATEWAY_HOST}/oauth"
 echo -n "$OAUTH_REDIRECT_URI" | gcloud secrets versions add oauth_redirect_uri --project "$PROJECT_ID" --data-file=-
 ```
 
+Create a dedicated API key for gateway web routes (`/web/*`):
+
+```bash
+export GATEWAY_MANAGED_SERVICE=$(gcloud api-gateway apis describe serverless-felix-dev \
+  --project "$PROJECT_ID" \
+  --format='value(managedService)')
+
+export GATEWAY_API_KEY=$(gcloud services api-keys create \
+  --project "$PROJECT_ID" \
+  --display-name="serverless-felix-web-dev" \
+  --api-target="service=${GATEWAY_MANAGED_SERVICE}" \
+  --allowed-referrers="https://serverless-felix-dev.web.app/*,http://localhost:*/*" \
+  --format='value(keyString)')
+```
+
+Store this value in your deploy secrets (CI + local env). The key string is only shown at creation.
+
 Redeploy OAuth components so they read latest secret value:
 
 ```bash
@@ -314,6 +332,7 @@ The web app defaults to dev values if `VITE_*` is not set.
 
 ```bash
 export VITE_API_GATEWAY_URL="https://${DEV_GATEWAY_HOST}"
+export VITE_API_GATEWAY_KEY="$GATEWAY_API_KEY"
 export VITE_FIREBASE_PROJECT_ID="serverless-felix-dev"
 export VITE_FIREBASE_AUTH_DOMAIN="serverless-felix-dev.firebaseapp.com"
 export VITE_FIREBASE_STORAGE_BUCKET="serverless-felix-dev.firebasestorage.app"

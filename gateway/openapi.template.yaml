@@ -7,6 +7,11 @@ schemes:
   - https
 produces:
   - application/json
+securityDefinitions:
+  gateway_api_key:
+    type: apiKey
+    name: key
+    in: query
 paths:
   /discord:
     post:
@@ -23,6 +28,8 @@ paths:
     get:
       summary: Web proxy with path
       operationId: webGetPath
+      security:
+        - gateway_api_key: []
       parameters:
         - name: path
           in: path
@@ -38,6 +45,8 @@ paths:
     post:
       summary: Web proxy with path
       operationId: webPostPath
+      security:
+        - gateway_api_key: []
       parameters:
         - name: path
           in: path
@@ -69,6 +78,8 @@ paths:
     get:
       summary: Web proxy request status
       operationId: webGetRequestStatus
+      security:
+        - gateway_api_key: []
       parameters:
         - name: requestId
           in: path

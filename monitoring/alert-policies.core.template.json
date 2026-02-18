@@ -113,6 +113,44 @@
       "alertStrategy": {
         "autoClose": "1800s"
       }
+    },
+    {
+      "displayName": "Serverless Felix - DLQ Messages Detected ({{ENV}})",
+      "documentation": {
+        "mimeType": "text/markdown",
+        "content": "Dead-letter queue contains messages in `{{PROJECT_ID}}`. Investigate failed worker deliveries."
+      },
+      "userLabels": {
+        "app": "serverless-felix",
+        "env": "{{ENV}}",
+        "managed_by": "codex"
+      },
+      "conditions": [
+        {
+          "displayName": "jobs-dlq-sub undelivered messages > 0 for 5m",
+          "conditionThreshold": {
+            "filter": "metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\" resource.type=\"pubsub_subscription\" resource.labels.subscription_id=\"jobs-dlq-sub\"",
+            "aggregations": [
+              {
+                "alignmentPeriod": "60s",
+                "perSeriesAligner": "ALIGN_MAX",
+                "crossSeriesReducer": "REDUCE_MAX"
+              }
+            ],
+            "comparison": "COMPARISON_GT",
+            "thresholdValue": 0,
+            "duration": "300s",
+            "trigger": {
+              "count": 1
+            }
+          }
+        }
+      ],
+      "combiner": "OR",
+      "enabled": true,
+      "alertStrategy": {
+        "autoClose": "1800s"
+      }
     }
   ]
 }

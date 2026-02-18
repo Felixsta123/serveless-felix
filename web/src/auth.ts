@@ -43,7 +43,7 @@ export const clearSession = (): void => {
 };
 
 export const startLogin = (): void => {
-  window.location.href = `${config.apiGateway}/oauth?action=login`;
+  window.location.href = config.gatewayUrl('/oauth', { action: 'login' });
 };
 
 export const pollSession = async (state: string): Promise<SessionPollResult> => {
@@ -52,7 +52,7 @@ export const pollSession = async (state: string): Promise<SessionPollResult> => 
 
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const res = await fetch(`${config.apiGateway}/web/session?state=${state}`, {
+      const res = await fetch(config.gatewayUrl('/web/session', { state }), {
         credentials: 'include',
       });
 

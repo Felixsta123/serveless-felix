@@ -33,7 +33,7 @@ const parseHttpError = async (res: Response): Promise<Error> => {
 
 const waitForRequestResult = async <T>(requestId: string): Promise<T> => {
   const deadline = Date.now() + REQUEST_POLL_TIMEOUT_MS;
-  const statusUrl = `${config.apiGateway}/web/request?requestId=${encodeURIComponent(requestId)}`;
+  const statusUrl = config.gatewayUrl('/web/request', { requestId });
 
   while (Date.now() < deadline) {
     const res = await authFetch(statusUrl, { method: 'GET' });
@@ -88,7 +88,7 @@ const getOrWaitPayload = async <T>(url: string): Promise<T> => {
 };
 
 export const drawPixel = async (x: number, y: number, color: string): Promise<void> => {
-  const res = await authFetch(`${config.apiGateway}/web/draw`, {
+  const res = await authFetch(config.gatewayUrl('/web/draw'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -102,7 +102,7 @@ export const drawPixel = async (x: number, y: number, color: string): Promise<vo
 };
 
 export const logoutSession = async (): Promise<void> => {
-  await authFetch(`${config.apiGateway}/web/logout`, {
+  await authFetch(config.gatewayUrl('/web/logout'), {
     method: 'POST',
   });
 };
@@ -143,26 +143,23 @@ export type CanvasWindowResponse = {
 };
 
 export const getActiveArea = async (): Promise<ActiveArea> =>
-  getOrWaitPayload<ActiveArea>(`${config.apiGateway}/web/active-area`);
+  getOrWaitPayload<ActiveArea>(config.gatewayUrl('/web/active-area'));
 
 export const getCanvasWindow = async (
   offsetX: number,
   offsetY: number,
   size: number,
 ): Promise<CanvasWindowResponse> => {
-  const params = new URLSearchParams({
-    offsetX: String(offsetX),
-    offsetY: String(offsetY),
-    size: String(size),
-  });
-  return getOrWaitPayload<CanvasWindowResponse>(
-    `${config.apiGateway}/web/canvas?${params.toString()}`,
-  );
+  return getOrWaitPayload<CanvasWindowResponse>(config.gatewayUrl('/web/canvas', {
+    offsetX,
+    offsetY,
+    size,
+  }));
 };
 
 export const getRealtimeToken = async (): Promise<string | null> => {
   const body = await getOrWaitPayload<{ token?: unknown }>(
-    `${config.apiGateway}/web/realtime-token`,
+    config.gatewayUrl('/web/realtime-token'),
   );
   return typeof body.token === 'string' ? body.token : null;
 };
